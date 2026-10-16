@@ -100,7 +100,11 @@ final class AppModel: ObservableObject {
     init() {
         BluetoothManager.requestAuthorization()
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
-        if session.config.audioMode == .continuity && !ContinuityCalls.isAccessibilityTrusted {
+        // Ask macOS once: afterwards the Accessibility check shows the state and the fix,
+        // instead of a system pop-up at every launch
+        if session.config.audioMode == .continuity && !ContinuityCalls.isAccessibilityTrusted
+            && !UserDefaults.standard.bool(forKey: "accessibilityPrompted") {
+            UserDefaults.standard.set(true, forKey: "accessibilityPrompted")
             ContinuityCalls.requestAccessibility()
         }
         profileText = session.loadProfile()

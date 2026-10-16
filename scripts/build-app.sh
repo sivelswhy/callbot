@@ -54,13 +54,18 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 </plist>
 PLIST
 
-# Files under ~/Documents carry extended attributes that break codesign
-xattr -cr "$APP"
 # A stable identity (scripts/setup-signing.sh) keeps the permissions across rebuilds
 IDENTITY="-"
 if security find-identity -v -p codesigning 2>/dev/null | grep -q "PhoneBT Local Signing"; then
     IDENTITY="PhoneBT Local Signing"
 fi
-codesign --force --deep --sign "$IDENTITY" "$APP"
+# Files under ~/Documents carry extended attributes that break codesign, and macOS can
+# add them back while signing: clear them and retry
+for attempt in 1 2 3 4 5; do
+    xattr -cr "$APP"
+    if codesign --force --deep --sign "$IDENTITY" "$APP" 2>/dev/null; then break; fi
+    [ "$attempt" = 5 ] && { echo "❌ codesign failed"; exit 1; }
+    sleep 1
+done
 
 echo "✅ $APP ready — launch it with: open $APP"

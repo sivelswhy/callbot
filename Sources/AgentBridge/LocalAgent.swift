@@ -430,7 +430,7 @@ public actor LocalAgent {
                     case .callEnded:
                         if await self.callConnected {
                             let journal = await self.callJournal.joined(separator: "\n")
-                            response = try await self.injectEvent("The call has ended (don't use end_call, it's already hung up) — give the user a short summary. What really happened, in order (trust this over your memory):\n\(journal)\nSay what the line is and list the options you heard; only state facts from this list; say clearly what was NOT confirmed")
+                            response = try await self.injectEvent("The call has ended (don't use end_call, it's already hung up) — give the user a short summary. What really happened, in order (trust this over your memory):\n\(journal)\nSay what the line is and list the options you heard; only state facts from this list; say clearly what was NOT confirmed. Write it in \(UILanguage.agent.englishName).")
                         } else {
                             await self.addNote("The call ended before anyone answered")
                             response = nil
