@@ -29,6 +29,7 @@ public final class AudioCapture: @unchecked Sendable {
     private var restartTimer: Timer?
     private var lastTranscription: String = ""
     private var isCapturing = false
+    private var handlerID: UUID?
 
     private let silenceTimeout: TimeInterval = 1.5
     private let maxRecognitionDuration: TimeInterval = 55 // restart before 60s limit
@@ -36,9 +37,14 @@ public final class AudioCapture: @unchecked Sendable {
     /// Called with final transcribed text for each utterance
     public var onTranscription: ((String) -> Void)?
 
-    public init(sessionManager: AudioSessionManager, locale: Locale = Locale(identifier: "en-US")) {
+    public init(sessionManager: AudioSessionManager, locale: Locale = Locale(identifier: "fr-FR")) {
         self.sessionManager = sessionManager
         self.speechRecognizer = SFSpeechRecognizer(locale: locale) ?? SFSpeechRecognizer()!
+    }
+
+    /// Whether this locale can be transcribed fully offline on this Mac
+    public static func supportsOnDevice(locale: Locale) -> Bool {
+        SFSpeechRecognizer(locale: locale)?.supportsOnDeviceRecognition ?? false
     }
 
     /// Request speech recognition authorization. Must be called before start().
@@ -70,20 +76,17 @@ public final class AudioCapture: @unchecked Sendable {
         let request = SFSpeechAudioBufferRecognitionRequest()
         request.shouldReportPartialResults = true
 
-        // Prefer on-device recognition if available
-        if speechRecognizer.supportsOnDeviceRecognition {
-            request.requiresOnDeviceRecognition = true
-            logger.info("Using on-device speech recognition")
+        // Strictly on-device: audio never leaves the Mac
+        request.requiresOnDeviceRecognition = true
+        if !speechRecognizer.supportsOnDeviceRecognition {
+            logger.error("On-device speech recognition unavailable for \(speechRecognizer.locale.identifier) — enable Dictation for this language in System Settings")
         }
 
         recognitionRequest = request
         lastTranscription = ""
 
         // Install tap on input node
-        let inputNode = sessionManager.engine.inputNode
-        let recordingFormat = inputNode.outputFormat(forBus: 0)
-
-        inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { [weak self] buffer, _ in
+        handlerID = sessionManager.addInputHandler { [weak self] buffer in
             self?.recognitionRequest?.append(buffer)
         }
 
@@ -135,7 +138,8 @@ public final class AudioCapture: @unchecked Sendable {
             self?.restartTimer = nil
         }
 
-        sessionManager.engine.inputNode.removeTap(onBus: 0)
+        if let handlerID { sessionManager.removeInputHandler(handlerID) }
+        handlerID = nil
         recognitionRequest?.endAudio()
         recognitionTask?.cancel()
         recognitionRequest = nil

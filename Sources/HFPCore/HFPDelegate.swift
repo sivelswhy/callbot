@@ -79,10 +79,10 @@ public final class HFPDelegate: NSObject, IOBluetoothHandsFreeDeviceDelegate, @u
         logger.info("Delegate: callActive = \(active)")
         eventStream.emit(.callIndicator(active))
 
+        // The end of call is surfaced by HFPDevice when callIndicator(false) moves the
+        // state machine to idle; emitting it here too would end the call twice.
         if active {
             eventStream.emit(.callActive)
-        } else {
-            eventStream.emit(.callEnded)
         }
     }
 
@@ -133,7 +133,12 @@ public final class HFPDelegate: NSObject, IOBluetoothHandsFreeDeviceDelegate, @u
 
     public func handsFree(_ device: IOBluetoothHandsFree!,
                           scoConnectionOpened status: NSNumber!) {
-        logger.info("Delegate: SCO opened, status=\(status ?? 0)")
+        let code = status?.intValue ?? 0
+        logger.info("Delegate: SCO opened, status=\(code)")
+        guard code == 0 else {
+            eventStream.emit(.scoFailed(code))
+            return
+        }
         eventStream.emit(.scoConnected)
     }
 

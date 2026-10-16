@@ -1,150 +1,156 @@
-# PhoneBT
+# PhoneBT — agent téléphonique IA local pour macOS
 
-A macOS Bluetooth Hands-Free Profile (HFP) client that connects to an iPhone or Android phone, allowing a Claude AI agent to make and receive phone calls through the phone's cellular connection.
+> ⚠️ **Bêta.** Le projet est en développement actif : attends-toi à des bugs, à des
+> changements de comportement et à des réglages qui bougent d'une version à l'autre.
+> Vérifie toujours ce que l'agent dit et fait pendant un appel.
 
-The Mac acts as the Hands-Free (HF) unit; the phone acts as the Audio Gateway (AG).
+PhoneBT transforme un Mac relié à un iPhone en assistant téléphonique : un agent IA passe
+et reçoit des appels avec la ligne cellulaire du téléphone, écoute l'interlocuteur, lui
+répond à voix haute, navigue dans les serveurs vocaux (« tapez 1… ») et te demande ton avis
+quand il lui manque une information. Tout tourne **en local** : LLM via Ollama,
+transcription via whisper.cpp, synthèse vocale de macOS. Aucune clé d'API n'est nécessaire.
 
-## How It Works
+Ce projet est basé sur [PhoneBT d'ICOA](https://github.com/icoainc/phonebt), un client
+Bluetooth mains-libres (HFP) pour macOS, dont il reprend le cœur Bluetooth.
 
-PhoneBT uses Apple's `IOBluetoothHandsFreeDevice` framework to establish an HFP Service Level Connection with a paired phone. Once connected, it can:
+[![Build](https://github.com/sivelswhy/callbot/actions/workflows/build.yml/badge.svg)](https://github.com/sivelswhy/callbot/actions/workflows/build.yml)
 
-- **Dial numbers** and place outgoing calls
-- **Answer or reject** incoming calls
-- **Send DTMF tones** for navigating phone menus
-- **Route audio** through the Mac's speakers and microphone via Bluetooth SCO
-- **Hear callers** via on-device speech-to-text (Apple `SFSpeechRecognizer`)
-- **Speak to callers** via text-to-speech (ElevenLabs API)
-- **Report phone status** including signal strength, battery level, and carrier
+## Fonctionnement
 
-In AI agent mode, Claude controls the phone through a tool-use conversation loop — you describe what you want in natural language, and Claude executes the appropriate phone commands. During active calls, Claude can hear what the caller says (via real-time transcription) and speak back to them (via TTS), enabling fully autonomous phone conversations.
+```
+iPhone ──(Continuité « Appels sur le Mac »)──► FaceTime sur le Mac
+                                                  │
+     son de l'appel ──► capture audio système ──► Whisper (transcription, langue détectée)
+                                                  │
+                                                  ▼
+                                    LLM local (Ollama) + outils
+                                                  │
+     voix de l'agent ◄── BlackHole 16ch ◄── synthèse vocale macOS
+```
 
-## Requirements
+- **Contrôle de l'appel** : le Mac est jumelé à l'iPhone en Bluetooth (profil mains-libres)
+  pour suivre l'état de l'appel, raccrocher et envoyer des touches DTMF.
+- **Audio** : l'appel passe par la fonction Continuité de macOS. L'agent entend l'appel grâce
+  à une capture de l'audio système (macOS 14.2+) et parle dans l'appel via le périphérique
+  virtuel BlackHole 16ch, utilisé comme micro par FaceTime.
+- **Écoute** : tu entends l'appel (interlocuteur + agent) sur les haut-parleurs ou le casque
+  du Mac, et tu peux intervenir à tout moment : dire une phrase, taper des touches, donner une
+  instruction à l'agent.
 
-- macOS 13 (Ventura) or later
-- A Bluetooth-paired iPhone or Android phone
-- Swift 5.9+
-- `ANTHROPIC_API_KEY` environment variable (for AI agent mode)
-- `ELEVENLABS_API_KEY` environment variable (optional, for TTS during calls)
+## Langues
 
-## Building
+L'agent répond dans la langue de l'interlocuteur. Whisper détecte automatiquement la langue
+(français, anglais, espagnol, arabe, hébreu, russe, allemand…), ou tu peux la fixer dans
+l'app pour une transcription plus fiable. Quand l'appel n'est pas en français, chaque phrase
+est traduite dans l'interface, et le texte que tu tapes en français est traduit avant d'être
+prononcé. L'interface de l'app est en français.
+
+## Prérequis
+
+- macOS 14.2 ou plus récent, Mac Apple Silicon recommandé (16 Go de RAM conseillés)
+- Un iPhone avec **Appels sur d'autres appareils** activé (Réglages › Téléphone), connecté
+  au même compte Apple, et jumelé au Mac en Bluetooth
+- [Ollama](https://ollama.com) et un modèle qui gère les outils :
+  ```bash
+  ollama pull qwen3:4b-instruct
+  ```
+- [whisper.cpp](https://github.com/ggml-org/whisper.cpp) et le modèle `large-v3-turbo` :
+  ```bash
+  brew install whisper-cpp
+  mkdir -p ~/.phonebt/models
+  curl -L -o ~/.phonebt/models/ggml-large-v3-turbo-q5_0.bin \
+    https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo-q5_0.bin
+  ```
+- [BlackHole](https://github.com/ExistentialAudio/BlackHole) 2ch et 16ch, puis redémarrer le Mac :
+  ```bash
+  brew install --cask blackhole-2ch blackhole-16ch
+  ```
+- Une voix de synthèse pour chaque langue utilisée : Réglages Système › Accessibilité ›
+  Contenu énoncé › Voix du système. Les voix « améliorées » ou « premium » sonnent bien
+  mieux que les voix compactes installées par défaut.
+
+## Installation
 
 ```bash
-swift build
+git clone https://github.com/sivelswhy/callbot.git
+cd callbot
+./scripts/build-app.sh
+open build/PhoneBT.app
 ```
 
-## Running
+Au premier lancement, autorise PhoneBT dans Réglages Système › Confidentialité et sécurité :
 
-```bash
-swift run PhoneBT
-```
+| Autorisation | Pourquoi |
+|---|---|
+| Bluetooth | Contrôle de l'appel avec l'iPhone |
+| Micro | Capture audio de l'appel |
+| Enregistrement de l'écran et de l'audio système (« Audio système uniquement ») | L'agent entend l'interlocuteur |
+| Accessibilité | Cliquer « Appeler » / « Accepter » dans FaceTime automatiquement |
 
-### Interactive CLI
+Au démarrage, l'app vérifie chaque élément (Ollama, Whisper, BlackHole, voix, autorisations)
+et indique quoi corriger ; le bouton **Revérifier** relance le contrôle.
 
-```
-phonebt> paired           # List paired Bluetooth devices
-phonebt> connect 2        # Connect to device at index 2
-phonebt> dial +15551234567 # Place a call
-phonebt> answer           # Answer an incoming call
-phonebt> hangup           # End the current call
-phonebt> dtmf 1           # Send a DTMF tone
-phonebt> status           # Show call status
-phonebt> phone            # Show phone status (signal, battery, carrier)
-phonebt> audio            # List Bluetooth audio devices
-phonebt> agent            # Enter AI agent mode
-phonebt> quit             # Exit
-```
+> L'app est signée localement (ad hoc). Après une recompilation, macOS peut redemander
+> certaines autorisations.
 
-### AI Agent Mode
+## Utilisation
 
-Set your API keys and enter agent mode after connecting to a phone:
+1. Ouvre l'app, choisis ton iPhone et connecte-toi.
+2. Remplis ton **profil** (nom, numéros client…) : l'agent n'utilise que ces informations,
+   il n'invente jamais un numéro ni un identifiant.
+3. Active l'**agent**, puis donne-lui une mission (« Appelle mon opérateur pour demander le
+   détail de ma dernière facture ») ou laisse-le décrocher les appels entrants.
+4. Suis l'appel en direct : transcription, traduction, questions de l'agent avec réponses
+   cliquables.
 
-```bash
-export ANTHROPIC_API_KEY=sk-ant-...
-export ELEVENLABS_API_KEY=xi-...    # optional, enables TTS
-swift run PhoneBT
-```
+Une interface en ligne de commande est aussi disponible : `swift run PhoneBT` (`help` pour la
+liste des commandes).
 
-```
-phonebt> paired
-phonebt> connect 2
-phonebt> agent
+## Configuration
 
-agent> Call my voicemail
-Agent: I'll dial *86 for you now.
-[tool_use: dial_number(*86)]
-Agent: Your voicemail is ringing. I'll let you know when it connects.
+Variables d'environnement facultatives :
 
-agent> Check the phone battery
-Agent: Your phone is at 4/5 battery with 1/5 signal strength on T-Mobile.
+| Variable | Défaut | Rôle |
+|---|---|---|
+| `PHONEBT_MODEL` | `qwen3:4b-instruct` | Modèle Ollama (`qwen3:8b` : plus fiable, deux fois plus lent) |
+| `OLLAMA_HOST` | `http://localhost:11434` | Serveur Ollama |
+| `PHONEBT_LOCALE` | `fr-FR` | Langue principale (voix par défaut) |
+| `PHONEBT_VOICE` | meilleure voix installée | Voix de synthèse (nom ou identifiant) |
+| `PHONEBT_VOICE_RATE` | `0.52` | Débit de la voix (0 à 1) |
+| `PHONEBT_STT` | `whisper` | `whisper` (multilingue) ou `apple` (une seule langue) |
+| `PHONEBT_WHISPER_MODEL` | `~/.phonebt/models/ggml-large-v3-turbo-q5_0.bin` | Modèle Whisper |
+| `PHONEBT_WHISPER_LANG` | `auto` | Langue de l'interlocuteur, ou détection automatique |
+| `PHONEBT_AUDIO` | `continuity` | `continuity` ou `bluetooth` (audio SCO, refusé par les macOS récents) |
+| `PHONEBT_PROFILE` | `~/.phonebt/profile.md` | Fichier du profil utilisateur |
+| `PHONEBT_PROMPT_FILE` | — | Instructions supplémentaires pour l'agent |
 
-agent> exit
-```
+Le journal de débogage est écrit dans `~/.phonebt/debug.log`.
 
-The agent automatically receives incoming call notifications and can answer or reject them on your behalf.
-
-### Real-Time Voice Conversations
-
-When `ELEVENLABS_API_KEY` is set and a call is active with SCO audio connected, the audio pipeline starts automatically:
-
-1. **Caller speech** is transcribed in real-time via Apple's on-device `SFSpeechRecognizer`
-2. Transcriptions appear as `[CALLER SPEECH]` events in agent mode
-3. Claude responds using the `say_to_caller` tool, which converts text to speech via ElevenLabs
-4. The caller hears Claude's response through the phone
-
-```
-🔊 Audio connected
-🗣️  Caller: "Hi, I'm calling about my appointment"
-Agent: [tool_use: say_to_caller("Hello! I'd be happy to help with your appointment. Could you give me your name?")]
-🗣️  Caller: "Sure, it's John Smith"
-```
-
-Speech recognition authorization is requested on first launch. Echo cancellation is enabled automatically on macOS 14+.
-
-## Project Structure
+## Structure du projet
 
 ```
 Sources/
-├── PhoneBT/main.swift              # CLI entry point
-├── HFPCore/
-│   ├── BluetoothManager.swift      # Device discovery & pairing
-│   ├── HFPDevice.swift             # IOBluetoothHandsFreeDevice wrapper
-│   ├── HFPStateMachine.swift       # Connection/call/audio state tracking
-│   ├── HFPDelegate.swift           # HFP delegate → event stream
-│   ├── HFPEvents.swift             # AsyncStream-based event distribution
-│   └── ATCommandExtensions.swift   # AT response parsers (CLCC, COPS, CLIP)
-├── AudioPipeline/
-│   ├── AudioSessionManager.swift   # Shared AVAudioEngine for full-duplex BT audio
-│   ├── AudioCapture.swift          # STT via SFSpeechRecognizer (on-device)
-│   ├── TTSPlayer.swift             # TTS via ElevenLabs API
-│   ├── AudioRouter.swift           # SCO ↔ CoreAudio bridge
-│   └── AudioDeviceManager.swift    # System audio device management
-├── AgentBridge/
-│   ├── ClaudeAgent.swift           # Tool-use conversation loop
-│   ├── PhoneTools.swift            # Tool definitions for Claude
-│   └── ToolExecutor.swift          # Tool call → HFP command dispatch
-└── Shared/
-    ├── CallState.swift             # Call info model
-    └── Logger.swift                # os_log wrapper
+├── PhoneBTApp/      App macOS (SwiftUI)
+├── PhoneBT/         Interface en ligne de commande
+├── AgentBridge/     Session d'appel, agent local (Ollama), outils, Continuité
+├── AudioPipeline/   Capture système, sortie voix, Whisper, synthèse vocale, écoute
+├── HFPCore/         Bluetooth mains-libres (HFP) : connexion, état d'appel, DTMF
+└── Shared/          Modèles et journalisation
 ```
 
-## Testing
+## Limites connues
 
-```bash
-swift test
-```
+- **Bêta** : testé sur un nombre limité de configurations Mac / iPhone.
+- Les petits modèles locaux se trompent parfois (mauvaise touche de menu, réponse hors outil).
+  Des garde-fous bloquent les actions les plus risquées (numéros inventés, composition
+  pendant un appel), mais surveille les appels importants.
+- Composer et décrocher automatiquement dépendent de l'interface de FaceTime (Accessibilité) ;
+  si le bouton n'est pas trouvé, clique-le toi-même.
+- L'audio Bluetooth SCO direct est refusé par les versions récentes de macOS : le mode
+  Continuité est celui qui fonctionne.
 
-30 tests covering the HFP state machine and tool executor (including `say_to_caller`).
+## Licence
 
-## Known Limitations
-
-- **SCO audio routing** depends on macOS exposing the Bluetooth SCO channel as a CoreAudio device, which may not work with all phone/Mac combinations. The `transferAudioToComputer()` API is attempted first, with manual CoreAudio routing as a fallback.
-- **Entitlements**: On newer macOS versions, Bluetooth access may require specific entitlements or code signing. If device discovery fails, try running from Xcode with the Bluetooth entitlement enabled.
-- **Speech recognition** requires user authorization on first use. The app requests this at startup. On-device recognition is preferred when available.
-- **Echo cancellation** uses `AVAudioEngine` voice processing on macOS 14+. On macOS 13, input may pick up TTS playback.
-- The AI agent uses Claude 3.7 Sonnet by default. You can change the model in `ClaudeAgent.swift`.
-
-## License
-
-Copyright 2026 ICOA Inc.
-
-Licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE) for details.
+Apache License 2.0, voir [LICENSE](LICENSE). Projet dérivé de
+[icoainc/phonebt](https://github.com/icoainc/phonebt) (Copyright 2026 ICOA Inc.), modifié :
+agent local avec Ollama, transcription Whisper, appels via Continuité, app macOS.

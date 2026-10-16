@@ -14,157 +14,264 @@
 
 import Foundation
 import AVFoundation
+import NaturalLanguage
 import Shared
 
-/// Plays TTS audio via ElevenLabs API through the shared AVAudioEngine
+/// Plays TTS audio synthesized on-device (AVSpeechSynthesizer) into the call
 public final class TTSPlayer: @unchecked Sendable {
     private let sessionManager: AudioSessionManager
-    private let apiKey: String
-    private let voiceID: String
+    private let voice: AVSpeechSynthesisVoice?
+    private let defaultLanguage: String
+    private let rate: Float
     private let logger = PhoneBTLogger(category: .audio)
-    private let urlSession = URLSession.shared
+    private let lock = NSLock()
+    private var voicesByLanguage: [String: AVSpeechSynthesisVoice] = [:]
+    private var activeUtterances = 0
 
-    private let sampleRate: Double = 16000
-    private let outputFormat = "pcm_16000"
+    /// Called with true when playback starts and false when the last utterance ends
+    /// (used to mute speech capture so we don't transcribe our own voice)
+    public var onSpeakingChanged: ((Bool) -> Void)?
 
-    public init(sessionManager: AudioSessionManager, apiKey: String, voiceID: String = "21m00Tcm4TlvDq8ikWAM") {
+    /// Receives every buffer sent to the call (used to monitor the call on the Mac)
+    public var onPlayback: ((AVAudioPCMBuffer) -> Void)?
+
+    /// - Parameters:
+    ///   - language: BCP-47 language used to pick a default voice (e.g. "fr-FR")
+    ///   - voiceIdentifier: optional voice identifier or name (see `TTSPlayer.availableVoices`)
+    ///   - rate: speech rate, 0.0–1.0 (AVSpeechUtteranceDefaultSpeechRate ≈ 0.5)
+    public init(
+        sessionManager: AudioSessionManager,
+        language: String = "fr-FR",
+        voiceIdentifier: String? = nil,
+        rate: Float = AVSpeechUtteranceDefaultSpeechRate
+    ) {
         self.sessionManager = sessionManager
-        self.apiKey = apiKey
-        self.voiceID = voiceID
+        self.voice = Self.pickVoice(language: language, identifier: voiceIdentifier)
+        self.defaultLanguage = String(language.prefix(2))
+        self.rate = rate
+        logger.info("TTS voice: \(voice?.name ?? "system default") (\(voice?.identifier ?? "-"))")
     }
 
-    /// Synthesize and play text through the audio engine's player node
-    public func speak(_ text: String) async throws {
-        let pcmData = try await synthesize(text)
-        let buffer = try createPCMBuffer(from: pcmData)
+    /// Voices installed on this Mac for a language, best quality first
+    public static func availableVoices(language: String) -> [AVSpeechSynthesisVoice] {
+        let prefix = String(language.prefix(2))
+        return AVSpeechSynthesisVoice.speechVoices()
+            .filter { $0.language.hasPrefix(prefix) }
+            .sorted { $0.quality.rawValue > $1.quality.rawValue }
+    }
 
-        let playerNode = sessionManager.playerNode
-        if !playerNode.isPlaying {
-            playerNode.play()
-        }
+    public var voiceName: String { voice?.name ?? "défaut système" }
 
-        // Schedule buffer and wait for completion
+    /// Detect the language of a text (ISO 639-1), e.g. "en" for English
+    public static func detectLanguage(_ text: String) -> String? {
+        let recognizer = NLLanguageRecognizer()
+        recognizer.processString(text)
+        return recognizer.dominantLanguage?.rawValue
+    }
+
+    /// Synthesize and play text through the audio engine's player node.
+    /// - Parameter language: ISO code ("fr", "he", "en"…); detected from the text when nil
+    public func speak(_ text: String, language: String? = nil) async throws {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+
+        let lang = language ?? Self.detectLanguage(trimmed) ?? defaultLanguage
+        let buffer = try await synthesize(trimmed, voice: voiceFor(language: lang))
+
+        setSpeaking(true)
+        defer { setSpeaking(false) }
+
+        onPlayback?(buffer)
+        // Resume once played, or after the buffer's duration plus a margin if the device
+        // stalls (otherwise speech capture would stay muted for the rest of the call)
+        let duration = Double(buffer.frameLength) / buffer.format.sampleRate
+        let session = sessionManager
+        let logger = self.logger
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-            playerNode.scheduleBuffer(buffer) {
-                continuation.resume()
+            let once = ResumeOnce(continuation)
+            Task {
+                await session.playVoice(buffer)
+                once.resume()
+            }
+            DispatchQueue.global().asyncAfter(deadline: .now() + duration + 3) {
+                if once.resume() {
+                    logger.error("TTS playback didn't complete in time (\(session.voiceStatusDescription))")
+                }
             }
         }
     }
 
     /// Cancel any currently playing TTS audio
     public func cancelCurrentPlayback() {
-        sessionManager.playerNode.stop()
-        sessionManager.playerNode.play() // re-arm for next buffer
+        sessionManager.cancelVoice()
         logger.info("TTS playback cancelled")
     }
 
     // MARK: - Private
 
-    private func synthesize(_ text: String) async throws -> Data {
-        let urlString = "https://api.elevenlabs.io/v1/text-to-speech/\(voiceID)/stream?output_format=\(outputFormat)"
-        guard let url = URL(string: urlString) else {
-            throw TTSError.invalidURL
+    private func voiceFor(language: String) -> AVSpeechSynthesisVoice? {
+        let code = String(language.prefix(2)).lowercased()
+        if code == defaultLanguage { return voice }
+        lock.lock(); defer { lock.unlock() }
+        if let cached = voicesByLanguage[code] { return cached }
+        let found = Self.availableVoices(language: code).first
+        if found == nil {
+            logger.error("No TTS voice installed for '\(code)' — falling back to default voice")
         }
-
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue(apiKey, forHTTPHeaderField: "xi-api-key")
-
-        let body: [String: Any] = [
-            "text": text,
-            "model_id": "eleven_turbo_v2",
-        ]
-        request.httpBody = try JSONSerialization.data(withJSONObject: body)
-
-        logger.info("TTS request: \(text.prefix(50))...")
-
-        let (data, response) = try await urlSession.data(for: request)
-
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw TTSError.invalidResponse
-        }
-        guard httpResponse.statusCode == 200 else {
-            let body = String(data: data, encoding: .utf8) ?? "unknown"
-            throw TTSError.apiError(statusCode: httpResponse.statusCode, message: body)
-        }
-
-        logger.info("TTS received \(data.count) bytes of PCM audio")
-        return data
+        let chosen = found ?? voice
+        voicesByLanguage[code] = chosen
+        return chosen
     }
 
-    private func createPCMBuffer(from pcmData: Data) throws -> AVAudioPCMBuffer {
-        // ElevenLabs pcm_16000 returns raw 16-bit signed LE mono PCM at 16kHz
-        let pcmFormat = AVAudioFormat(
-            commonFormat: .pcmFormatInt16,
-            sampleRate: sampleRate,
-            channels: 1,
-            interleaved: true
-        )!
+    private func setSpeaking(_ starting: Bool) {
+        lock.lock()
+        let before = activeUtterances
+        activeUtterances += starting ? 1 : -1
+        let after = activeUtterances
+        lock.unlock()
+        if before == 0 && after == 1 { onSpeakingChanged?(true) }
+        if before == 1 && after == 0 { onSpeakingChanged?(false) }
+    }
 
-        let frameCount = UInt32(pcmData.count / MemoryLayout<Int16>.size)
-        guard let pcmBuffer = AVAudioPCMBuffer(pcmFormat: pcmFormat, frameCapacity: frameCount) else {
+    private static func pickVoice(language: String, identifier: String?) -> AVSpeechSynthesisVoice? {
+        if let identifier, !identifier.isEmpty {
+            if let v = AVSpeechSynthesisVoice(identifier: identifier) { return v }
+            if let v = AVSpeechSynthesisVoice.speechVoices().first(where: {
+                $0.name.localizedCaseInsensitiveCompare(identifier) == .orderedSame
+            }) { return v }
+        }
+        // Prefer premium/enhanced voices, exact locale first
+        let candidates = availableVoices(language: language)
+        return candidates.first(where: { $0.language == language })
+            ?? candidates.first
+            ?? AVSpeechSynthesisVoice(language: language)
+    }
+
+    /// Render the utterance offline into a mono buffer in the engine's playback format
+    private func synthesize(_ text: String, voice: AVSpeechSynthesisVoice?) async throws -> AVAudioPCMBuffer {
+        let utterance = AVSpeechUtterance(string: text)
+        utterance.voice = voice
+        utterance.rate = rate
+
+        logger.info("TTS synth: \(text.prefix(50))...")
+
+        // A fresh synthesizer per utterance avoids interleaving concurrent requests
+        let synthesizer = AVSpeechSynthesizer()
+        let (samples, sampleRate) = try await withCheckedThrowingContinuation {
+            (continuation: CheckedContinuation<([Float], Double), Error>) in
+            var samples: [Float] = []
+            var sampleRate: Double = 0
+            var finished = false
+
+            synthesizer.write(utterance) { buffer in
+                guard !finished else { return }
+                guard let pcm = buffer as? AVAudioPCMBuffer else { return }
+
+                if pcm.frameLength == 0 {
+                    finished = true
+                    if samples.isEmpty || sampleRate == 0 {
+                        continuation.resume(throwing: TTSError.synthesisFailed)
+                    } else {
+                        continuation.resume(returning: (samples, sampleRate))
+                    }
+                    return
+                }
+
+                sampleRate = pcm.format.sampleRate
+                Self.appendMonoSamples(from: pcm, to: &samples)
+            }
+        }
+        withExtendedLifetime(synthesizer) {}
+
+        return try convertToPlaybackFormat(samples: samples, sampleRate: sampleRate)
+    }
+
+    /// Copy the first channel of a buffer (Float32 or Int16) as Float samples
+    private static func appendMonoSamples(from pcm: AVAudioPCMBuffer, to samples: inout [Float]) {
+        let count = Int(pcm.frameLength)
+        if let floats = pcm.floatChannelData {
+            samples.append(contentsOf: UnsafeBufferPointer(start: floats[0], count: count))
+        } else if let ints = pcm.int16ChannelData {
+            let stride = pcm.format.isInterleaved ? Int(pcm.format.channelCount) : 1
+            for i in 0..<count {
+                samples.append(Float(ints[0][i * stride]) / Float(Int16.max))
+            }
+        }
+    }
+
+    private func convertToPlaybackFormat(samples: [Float], sampleRate: Double) throws -> AVAudioPCMBuffer {
+        guard let sourceFormat = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 1),
+              let source = AVAudioPCMBuffer(pcmFormat: sourceFormat, frameCapacity: AVAudioFrameCount(samples.count)) else {
             throw TTSError.bufferCreationFailed
         }
-        pcmBuffer.frameLength = frameCount
-
-        // Copy raw PCM data into the buffer
-        pcmData.withUnsafeBytes { rawPtr in
-            let src = rawPtr.bindMemory(to: Int16.self)
-            pcmBuffer.int16ChannelData![0].update(from: src.baseAddress!, count: Int(frameCount))
+        source.frameLength = AVAudioFrameCount(samples.count)
+        samples.withUnsafeBufferPointer { ptr in
+            source.floatChannelData![0].update(from: ptr.baseAddress!, count: samples.count)
         }
 
-        // Convert to the player node's output format if needed
-        let playerFormat = sessionManager.engine.outputNode.inputFormat(forBus: 0)
-        if pcmFormat.sampleRate == playerFormat.sampleRate
-            && pcmFormat.channelCount == playerFormat.channelCount
-            && pcmFormat.commonFormat == playerFormat.commonFormat {
-            return pcmBuffer
+        let targetFormat = sessionManager.playbackFormat
+        if targetFormat.sampleRate == sourceFormat.sampleRate && targetFormat.channelCount == 1 {
+            return source
         }
 
-        guard let converter = AVAudioConverter(from: pcmFormat, to: playerFormat) else {
+        guard let converter = AVAudioConverter(from: sourceFormat, to: targetFormat) else {
             throw TTSError.converterCreationFailed
         }
 
-        let ratio = playerFormat.sampleRate / pcmFormat.sampleRate
-        let convertedFrameCount = UInt32(Double(frameCount) * ratio)
-        guard let convertedBuffer = AVAudioPCMBuffer(
-            pcmFormat: playerFormat,
-            frameCapacity: convertedFrameCount
-        ) else {
+        let ratio = targetFormat.sampleRate / sourceFormat.sampleRate
+        let capacity = AVAudioFrameCount(Double(samples.count) * ratio) + 1024
+        guard let output = AVAudioPCMBuffer(pcmFormat: targetFormat, frameCapacity: capacity) else {
             throw TTSError.bufferCreationFailed
         }
 
+        var provided = false
         var error: NSError?
-        converter.convert(to: convertedBuffer, error: &error) { _, outStatus in
+        converter.convert(to: output, error: &error) { _, outStatus in
+            if provided {
+                outStatus.pointee = .endOfStream
+                return nil
+            }
+            provided = true
             outStatus.pointee = .haveData
-            return pcmBuffer
+            return source
         }
 
         if let error = error {
             throw TTSError.conversionFailed(error.localizedDescription)
         }
+        return output
+    }
+}
 
-        return convertedBuffer
+/// Resumes a continuation only once (completion handler vs. timeout)
+private final class ResumeOnce: @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<Void, Never>?
+
+    init(_ continuation: CheckedContinuation<Void, Never>) { self.continuation = continuation }
+
+    /// - Returns: true if this call resumed the continuation
+    @discardableResult
+    func resume() -> Bool {
+        lock.lock()
+        let c = continuation
+        continuation = nil
+        lock.unlock()
+        c?.resume()
+        return c != nil
     }
 }
 
 public enum TTSError: Error, LocalizedError {
-    case invalidURL
-    case invalidResponse
-    case apiError(statusCode: Int, message: String)
+    case synthesisFailed
     case bufferCreationFailed
     case converterCreationFailed
     case conversionFailed(String)
 
     public var errorDescription: String? {
         switch self {
-        case .invalidURL:
-            return "Invalid ElevenLabs API URL"
-        case .invalidResponse:
-            return "Invalid response from ElevenLabs API"
-        case .apiError(let code, let message):
-            return "ElevenLabs API error (\(code)): \(message)"
+        case .synthesisFailed:
+            return "Speech synthesis produced no audio"
         case .bufferCreationFailed:
             return "Failed to create audio buffer"
         case .converterCreationFailed:

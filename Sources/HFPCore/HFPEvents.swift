@@ -34,6 +34,7 @@ public enum HFPEvent: Sendable {
     // Audio events
     case scoConnected
     case scoDisconnected
+    case scoFailed(Int)       // IOReturn status of a refused audio connection
 
     // Indicator events
     case signalStrength(Int)
@@ -51,7 +52,7 @@ public enum HFPEvent: Sendable {
     case operatorName(String)
 
     // Caller speech (transcription from STT)
-    case callerSpeech(String)
+    case callerSpeech(String, language: String?)  // language: ISO 639-1 code when detected
 
     // Error
     case error(String)

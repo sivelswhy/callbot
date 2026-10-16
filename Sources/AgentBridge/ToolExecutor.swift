@@ -17,12 +17,26 @@ import HFPCore
 import AudioPipeline
 import Shared
 
+/// Call control that can be provided instead of raw HFP commands (e.g. Continuity calls)
+public protocol CallActions: AnyObject, Sendable {
+    func placeCall(_ number: String) throws
+    func acceptCall() throws
+    func endCall() throws
+}
+
 /// Executes tool calls by mapping them to HFP device commands
 public final class ToolExecutor: @unchecked Sendable {
     private let device: HFPDevice
     private let audioRouter: AudioRouter
     private let logger = PhoneBTLogger(category: .agent)
     public var ttsPlayer: TTSPlayer?
+    /// When set, dial/accept/end go through these actions instead of the HFP device
+    public weak var actions: CallActions?
+    /// Called when the agent needs information from the user (shown in the terminal)
+    /// Question for the user, with optional clickable answers
+    public var onAskUser: ((String, [String]) -> Void)?
+    /// Delay between DTMF digits of a sequence
+    public var dtmfInterval: TimeInterval = 0.35
 
     public init(device: HFPDevice, audioRouter: AudioRouter, ttsPlayer: TTSPlayer? = nil) {
         self.device = device
@@ -50,6 +64,8 @@ public final class ToolExecutor: @unchecked Sendable {
                 return executeGetPhoneStatus()
             case "say_to_caller":
                 return executeSayToCaller(input: input)
+            case "ask_user":
+                return executeAskUser(input: input)
             default:
                 return errorJSON("Unknown tool: \(toolName)")
             }
@@ -66,10 +82,7 @@ public final class ToolExecutor: @unchecked Sendable {
         }
 
         let sanitized = sanitizePhoneNumber(number)
-        try device.dial(number: sanitized)
-
-        // Try to connect audio proactively
-        try? device.transferAudioToComputer()
+        if let actions { try actions.placeCall(sanitized) } else { try device.dial(number: sanitized) }
 
         return successJSON([
             "status": "dialing",
@@ -78,11 +91,7 @@ public final class ToolExecutor: @unchecked Sendable {
     }
 
     private func executeAccept() throws -> String {
-        try device.acceptCall()
-
-        // Route audio to computer
-        try? device.transferAudioToComputer()
-        _ = audioRouter.routeToBluetoothDevice()
+        if let actions { try actions.acceptCall() } else { try device.acceptCall() }
 
         return successJSON([
             "status": "answered",
@@ -90,10 +99,12 @@ public final class ToolExecutor: @unchecked Sendable {
     }
 
     private func executeEndCall() throws -> String {
-        try device.endCall()
-
-        // Restore audio routing
-        audioRouter.restorePreviousRouting()
+        if let actions {
+            try actions.endCall()
+        } else {
+            try device.endCall()
+            audioRouter.restorePreviousRouting()
+        }
 
         return successJSON([
             "status": "ended",
@@ -101,17 +112,53 @@ public final class ToolExecutor: @unchecked Sendable {
     }
 
     private func executeSendDTMF(input: [String: Any]) throws -> String {
-        guard let digit = input["digit"] as? String else {
-            return errorJSON("Missing required parameter: digit")
+        guard let raw = (input["digits"] ?? input["digit"]).map({ "\($0)" }) else {
+            return errorJSON("Missing required parameter: digits")
+        }
+        let digits = Self.dtmfDigits(raw)
+        guard !digits.isEmpty else {
+            return errorJSON("Invalid DTMF digits: \(raw) (allowed: 0-9, *, #)")
         }
 
-        try device.sendDTMF(digit)
+        // Send the first digit now (surfaces errors), the rest spaced out in the background
+        try device.sendDTMF(String(digits[0]))
+        if digits.count > 1 {
+            let device = self.device
+            let interval = dtmfInterval
+            let rest = digits.dropFirst()
+            Task.detached { [logger] in
+                for d in rest {
+                    try? await Task.sleep(nanoseconds: UInt64(interval * 1_000_000_000))
+                    do { try device.sendDTMF(String(d)) } catch { logger.error("DTMF \(d) failed: \(error)") }
+                }
+            }
+        }
 
         return successJSON([
             "status": "sent",
-            "digit": digit,
+            "digits": String(digits),
         ])
     }
+
+    /// Keep only valid DTMF characters
+    public static func dtmfDigits(_ raw: String) -> [Character] {
+        raw.filter { $0.isASCII && ($0.isNumber || $0 == "*" || $0 == "#") }.map { $0 }
+    }
+
+    private func executeAskUser(input: [String: Any]) -> String {
+        guard let question = input["question"] as? String, !question.isEmpty else {
+            return errorJSON("Missing required parameter: question")
+        }
+        let options = (input["options"] as? [Any] ?? []).map { "\($0)" }.filter { !$0.isEmpty }
+        onAskUser?(question, options)
+        return successJSON([
+            "status": "asked",
+            "note": "The user will answer in a later message. Meanwhile, ask the caller to hold on if needed.",
+        ])
+    }
+
+    /// A call is ringing, being dialed or in progress
+    public var isInCall: Bool { device.currentState.call != .idle }
 
     private func executeGetCallStatus() -> String {
         let state = device.currentState
@@ -149,14 +196,16 @@ public final class ToolExecutor: @unchecked Sendable {
             return errorJSON("Missing required parameter: text")
         }
 
+        let language = input["language"] as? String
+
         guard let ttsPlayer = ttsPlayer else {
-            return errorJSON("TTS not available — ELEVENLABS_API_KEY not set or audio pipeline not started")
+            return errorJSON("TTS not available — audio pipeline not started (no active call audio)")
         }
 
         // Fire TTS in a detached task so the tool returns immediately
         Task.detached { [logger] in
             do {
-                try await ttsPlayer.speak(text)
+                try await ttsPlayer.speak(text, language: language)
                 logger.info("TTS playback completed for: \(text.prefix(50))")
             } catch {
                 logger.error("TTS playback failed: \(error)")

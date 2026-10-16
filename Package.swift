@@ -21,10 +21,9 @@ let package = Package(
     platforms: [.macOS(.v13)],
     products: [
         .executable(name: "PhoneBT", targets: ["PhoneBT"]),
+        .executable(name: "PhoneBTApp", targets: ["PhoneBTApp"]),
     ],
-    dependencies: [
-        .package(url: "https://github.com/jamesrochabrun/SwiftAnthropic.git", from: "2.2.0"),
-    ],
+    dependencies: [],
     targets: [
         .target(
             name: "Shared",
@@ -35,6 +34,7 @@ let package = Package(
             dependencies: ["Shared"],
             linkerSettings: [
                 .linkedFramework("IOBluetooth"),
+                .linkedFramework("CoreBluetooth"),
             ]
         ),
         .target(
@@ -53,11 +53,23 @@ let package = Package(
                 "HFPCore",
                 "AudioPipeline",
                 "Shared",
-                .product(name: "SwiftAnthropic", package: "SwiftAnthropic"),
             ]
         ),
         .executableTarget(
             name: "PhoneBT",
+            dependencies: [
+                "HFPCore",
+                "AudioPipeline",
+                "AgentBridge",
+                "Shared",
+            ],
+            linkerSettings: [
+                // Embed Info.plist so macOS can show Bluetooth / microphone / speech permission prompts
+                .unsafeFlags(["-Xlinker", "-sectcreate", "-Xlinker", "__TEXT", "-Xlinker", "__info_plist", "-Xlinker", "Support/Info.plist"]),
+            ]
+        ),
+        .executableTarget(
+            name: "PhoneBTApp",
             dependencies: [
                 "HFPCore",
                 "AudioPipeline",

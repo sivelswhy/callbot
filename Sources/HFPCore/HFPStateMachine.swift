@@ -123,6 +123,9 @@ public final class HFPStateMachine: @unchecked Sendable {
             state.audio = .connected
             logger.info("State: SCO audio connected")
 
+        case .scoFailed(let status):
+            logger.info("State: SCO audio refused (\(status))")
+
         case .scoDisconnected:
             state.audio = .disconnected
             logger.info("State: SCO audio disconnected")
@@ -142,9 +145,13 @@ public final class HFPStateMachine: @unchecked Sendable {
         case .callSetup(let setupState):
             switch setupState {
             case 0:
-                // No call setup — if we were dialing/alerting, call either connected or failed
-                if state.call == .dialing || state.call == .alerting {
-                    // Will be resolved by callIndicator
+                // Setup finished. Per HFP the AG reports call=1 *before* callsetup=0 when the
+                // call connects, so still dialing/alerting/incoming here means it failed
+                // (busy, rejected, no answer, missed).
+                if state.call == .dialing || state.call == .alerting || state.call == .incoming {
+                    state.call = .idle
+                    state.activeCall = nil
+                    logger.info("State: call setup ended without connecting")
                 }
             case 1:
                 state.call = .incoming
@@ -193,7 +200,7 @@ public final class HFPStateMachine: @unchecked Sendable {
             state.phoneStatus.operatorName = name
 
         case .callerSpeech:
-            break // handled by ClaudeAgent directly
+            break // handled by LocalAgent directly
 
         case .error:
             break

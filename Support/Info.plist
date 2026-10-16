@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleIdentifier</key>
+    <string>com.phonebt.cli</string>
+    <key>CFBundleName</key>
+    <string>PhoneBT</string>
+    <key>NSBluetoothAlwaysUsageDescription</key>
+    <string>PhoneBT se connecte à ton téléphone en Bluetooth (profil mains-libres) pour passer et recevoir des appels.</string>
+    <key>NSAudioCaptureUsageDescription</key>
+    <string>PhoneBT capte le son de l'appel joué par le Mac pour que l'agent IA entende l'interlocuteur.</string>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>PhoneBT écoute l'audio de l'appel pour que l'agent IA entende l'interlocuteur.</string>
+    <key>NSSpeechRecognitionUsageDescription</key>
+    <string>PhoneBT transcrit localement ce que dit l'interlocuteur pour l'agent IA.</string>
+</dict>
+</plist>

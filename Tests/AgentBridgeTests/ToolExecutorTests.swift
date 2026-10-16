@@ -176,7 +176,7 @@ final class ToolExecutorTests: XCTestCase {
             guard let _ = input["text"] as? String else {
                 return "{\"error\":\"Missing required parameter: text\",\"success\":false}"
             }
-            return "{\"error\":\"TTS not available \\u2014 ELEVENLABS_API_KEY not set or audio pipeline not started\",\"success\":false}"
+            return "{\"error\":\"TTS not available \\u2014 audio pipeline not started (no active call audio)\",\"success\":false}"
         default:
             return "{\"error\":\"Unknown tool: \(name)\",\"success\":false}"
         }

@@ -46,20 +46,39 @@ public final class HFPDevice: @unchecked Sendable {
         self.hfpDelegate = delegate
         self.stateMachine = sm
 
-        // Create HFP device with delegate
-        guard let hfDevice = IOBluetoothHandsFreeDevice(
-            device: bluetoothDevice,
-            delegate: delegate
-        ) else {
+        // Create HFP device with delegate. IOBluetooth delivers delegate callbacks on the
+        // run loop of the thread that creates the object, so it must be the main thread.
+        guard let hfDevice = Self.onMain({
+            IOBluetoothHandsFreeDevice(device: bluetoothDevice, delegate: delegate)
+        }) else {
             return nil
         }
         self.device = hfDevice
+
+        Self.onMain {
+            // Advertise narrowband (CVSD) only unless asked otherwise: wideband codec
+            // negotiation (mSBC) is a common cause of SCO audio failing to open.
+            let codecNegotiation = UInt32(1 << 7)
+            if ProcessInfo.processInfo.environment["PHONEBT_WIDEBAND"] != "1" {
+                hfDevice.supportedFeatures &= ~codecNegotiation
+            }
+            logger.info("HF features (Mac): 0x\(String(hfDevice.supportedFeatures, radix: 16))")
+        }
 
         // Start event processing loop
         self.eventTask = Task { [weak self] in
             let stream = events.makeStream()
             for await event in stream {
-                self?.stateMachine.handleEvent(event)
+                guard let self else { break }
+                let before = self.stateMachine.currentState.call
+                self.stateMachine.handleEvent(event)
+                let after = self.stateMachine.currentState.call
+                // Surface implicit call ends (busy, rejected…) as an explicit event
+                if before != .idle && after == .idle {
+                    if case .callEnded = event {} else {
+                        events.emit(.callEnded)
+                    }
+                }
             }
         }
     }
@@ -70,17 +89,23 @@ public final class HFPDevice: @unchecked Sendable {
 
     // MARK: - Connection
 
-    public func connect(timeout: TimeInterval = 15) async throws {
+    public func connect(timeout: TimeInterval = 45) async throws {
         logger.info("Connecting to \(deviceName)...")
 
-        // connect() initiates SLC (Service Level Connection) automatically
-        device.connect()
-
-        // Wait for connection event with timeout
+        // Subscribe before connecting so a fast callback can't be missed
         let stream = eventStream.makeStream()
-        let deadline = Date().addingTimeInterval(timeout)
 
-        // Use a task group to race the event stream against a timeout
+        // Already connected (e.g. a previous attempt finished after its timeout)
+        if Self.onMain({ device.isConnected }) {
+            eventStream.emit(.connected)
+            return
+        }
+
+        // connect() initiates SLC (Service Level Connection) automatically.
+        // Pairing confirmation on the phone/Mac may happen during this wait.
+        Self.onMain { device.connect() }
+
+        let hfDevice = device
         try await withThrowingTaskGroup(of: Void.self) { group in
             group.addTask {
                 for await event in stream {
@@ -90,11 +115,11 @@ public final class HFPDevice: @unchecked Sendable {
                         return
                     case .disconnected(let error):
                         throw BluetoothError.connectionFailed(
-                            error?.localizedDescription ?? "Connection rejected"
+                            error?.localizedDescription ?? "Connexion refusée par le téléphone"
                         )
                     case .connectFailed(let error):
                         throw BluetoothError.connectionFailed(
-                            error?.localizedDescription ?? "Connection failed"
+                            error?.localizedDescription ?? "Connexion échouée"
                         )
                     default:
                         continue
@@ -103,27 +128,44 @@ public final class HFPDevice: @unchecked Sendable {
             }
 
             group.addTask {
-                // Timeout task
+                // Fallback: poll the connection state in case the delegate callback never comes
+                while !Task.isCancelled {
+                    try await Task.sleep(nanoseconds: 500_000_000)
+                    if Self.onMain({ hfDevice.isConnected }) {
+                        self.logger.info("Connected to \(self.deviceName) (detected by polling)")
+                        self.eventStream.emit(.connected)
+                        return
+                    }
+                }
+            }
+
+            group.addTask {
                 try await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
                 throw BluetoothError.connectionFailed(
-                    "Connection timed out after \(Int(timeout))s"
+                    "Pas de réponse du téléphone après \(Int(timeout)) s. Sur l'iPhone, vérifie que le Bluetooth est actif et que le Mac est autorisé (Réglages › Bluetooth › ce Mac), puis réessaie."
                 )
             }
 
-            // Wait for whichever finishes first
             do {
                 try await group.next()
             } catch {
                 group.cancelAll()
+                Self.onMain { hfDevice.disconnect() }
                 throw error
             }
             group.cancelAll()
         }
     }
 
+    /// Run IOBluetooth calls on the main thread (required for its callbacks to be delivered)
+    static func onMain<T>(_ body: () -> T) -> T {
+        if Thread.isMainThread { return body() }
+        return DispatchQueue.main.sync(execute: body)
+    }
+
     public func disconnect() {
         logger.info("Disconnecting from \(deviceName)")
-        device.disconnect()
+        Self.onMain { device.disconnect() }
     }
 
     // MARK: - Call Management
@@ -134,7 +176,7 @@ public final class HFPDevice: @unchecked Sendable {
         }
         logger.info("Dialing \(number)")
         eventStream.emit(.callDialing(number: number))
-        device.dialNumber(number)
+        Self.onMain { device.dialNumber(number) }
     }
 
     public func acceptCall() throws {
@@ -142,7 +184,7 @@ public final class HFPDevice: @unchecked Sendable {
             throw BluetoothError.notConnected
         }
         logger.info("Accepting call")
-        device.acceptCall()
+        Self.onMain { device.acceptCall() }
     }
 
     public func endCall() throws {
@@ -150,7 +192,14 @@ public final class HFPDevice: @unchecked Sendable {
             throw BluetoothError.notConnected
         }
         logger.info("Ending call")
-        device.endCall()
+        Self.onMain { device.endCall() }
+
+        // If the phone doesn't confirm (e.g. the call had already failed), reset locally
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
+            guard let self, self.currentState.call != .idle else { return }
+            self.logger.info("No end-of-call confirmation from phone — resetting call state")
+            self.eventStream.emit(.callEnded)
+        }
     }
 
     public func sendDTMF(_ digit: String) throws {
@@ -161,7 +210,7 @@ public final class HFPDevice: @unchecked Sendable {
             throw BluetoothError.commandFailed("DTMF must be a single character")
         }
         logger.info("Sending DTMF: \(digit)")
-        device.sendDTMF(digit)
+        Self.onMain { device.sendDTMF(digit) }
     }
 
     // MARK: - Audio
@@ -171,12 +220,21 @@ public final class HFPDevice: @unchecked Sendable {
             throw BluetoothError.notConnected
         }
         logger.info("Connecting SCO audio")
-        device.connectSCO()
+        Self.onMain { device.connectSCO() }
+    }
+
+    /// Features advertised by the phone (AG), available once connected
+    public var phoneFeatures: UInt32 {
+        Self.onMain { device.deviceSupportedFeatures }
+    }
+
+    public var isAudioConnected: Bool {
+        Self.onMain { device.isSCOConnected() }
     }
 
     public func disconnectAudio() {
         logger.info("Disconnecting SCO audio")
-        device.disconnectSCO()
+        Self.onMain { device.disconnectSCO() }
     }
 
     public func transferAudioToComputer() throws {
@@ -184,7 +242,7 @@ public final class HFPDevice: @unchecked Sendable {
             throw BluetoothError.notConnected
         }
         logger.info("Transferring audio to computer")
-        device.transferAudioToComputer()
+        Self.onMain { device.transferAudioToComputer() }
     }
 
     // MARK: - AT Commands
@@ -195,7 +253,7 @@ public final class HFPDevice: @unchecked Sendable {
             throw BluetoothError.notConnected
         }
         logger.debug("Sending AT command: \(command)")
-        device.send(atCommand: command)
+        Self.onMain { device.send(atCommand: command) }
     }
 
     /// Request current call list (CLCC)

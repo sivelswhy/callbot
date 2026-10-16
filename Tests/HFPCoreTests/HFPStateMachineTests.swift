@@ -189,4 +189,38 @@ final class HFPStateMachineTests: XCTestCase {
         stateMachine.handleEvent(.callerID(number: "+15551111111", name: "John"))
         XCTAssertEqual(stateMachine.currentState.activeCall?.number, "+15551111111")
     }
+
+    // MARK: - Failed call setup
+
+    func testBusyOutgoingCallReturnsToIdle() {
+        let sm = HFPStateMachine()
+        sm.handleEvent(.connected)
+        sm.handleEvent(.callDialing(number: "0612345678"))
+        sm.handleEvent(.callSetup(2))
+        XCTAssertEqual(sm.currentState.call, .dialing)
+        // Busy: setup ends without call=1
+        sm.handleEvent(.callSetup(0))
+        XCTAssertEqual(sm.currentState.call, .idle)
+        XCTAssertNil(sm.currentState.activeCall)
+    }
+
+    func testConnectedOutgoingCallStaysActive() {
+        let sm = HFPStateMachine()
+        sm.handleEvent(.connected)
+        sm.handleEvent(.callDialing(number: "199"))
+        sm.handleEvent(.callSetup(3))
+        // Answered: call=1 comes before callsetup=0
+        sm.handleEvent(.callIndicator(true))
+        sm.handleEvent(.callSetup(0))
+        XCTAssertEqual(sm.currentState.call, .active)
+    }
+
+    func testMissedIncomingCallReturnsToIdle() {
+        let sm = HFPStateMachine()
+        sm.handleEvent(.connected)
+        sm.handleEvent(.callSetup(1))
+        XCTAssertEqual(sm.currentState.call, .incoming)
+        sm.handleEvent(.callSetup(0))
+        XCTAssertEqual(sm.currentState.call, .idle)
+    }
 }

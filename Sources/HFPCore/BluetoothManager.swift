@@ -14,6 +14,7 @@
 
 import Foundation
 import IOBluetooth
+import CoreBluetooth
 import Shared
 
 public struct DiscoveredDevice: Sendable {
@@ -38,11 +39,38 @@ public final class BluetoothManager: NSObject, @unchecked Sendable {
         super.init()
     }
 
+    // MARK: - Authorization
+
+    private static var authorizationManager: CBCentralManager?
+
+    /// Bluetooth privacy authorization for this app. Without it, IOBluetooth silently does nothing.
+    public static var authorizationStatus: String {
+        switch CBManager.authorization {
+        case .allowedAlways: return "autorisé"
+        case .denied: return "refusé"
+        case .restricted: return "restreint"
+        case .notDetermined: return "pas encore demandé"
+        @unknown default: return "inconnu"
+        }
+    }
+
+    public static var isAuthorized: Bool { CBManager.authorization == .allowedAlways }
+
+    /// Trigger the system Bluetooth permission prompt if it hasn't been answered yet
+    public static func requestAuthorization() {
+        guard CBManager.authorization == .notDetermined, authorizationManager == nil else { return }
+        DispatchQueue.main.async {
+            authorizationManager = CBCentralManager(delegate: nil, queue: .main)
+        }
+    }
+
     /// Scan for Bluetooth devices for the specified duration
     public func scanForDevices(duration: TimeInterval = 10) async throws -> [DiscoveredDevice] {
         logger.info("Starting device scan for \(Int(duration))s...")
 
         return try await withCheckedThrowingContinuation { continuation in
+          // Inquiry callbacks are delivered on the creating thread's run loop: use main
+          DispatchQueue.main.async {
             self.scanContinuation = continuation
             self.discoveredDevices = []
 
@@ -60,6 +88,7 @@ public final class BluetoothManager: NSObject, @unchecked Sendable {
                 self.scanContinuation = nil
                 continuation.resume(throwing: BluetoothError.scanFailed(result))
             }
+          }
         }
     }
 

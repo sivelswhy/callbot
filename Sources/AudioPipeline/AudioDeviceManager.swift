@@ -74,6 +74,64 @@ public final class AudioDeviceManager: Sendable {
         return deviceIDs.compactMap { deviceInfo(for: $0) }
     }
 
+    /// Names of the devices some process is currently using (for diagnostics)
+    public func runningDeviceNames() -> [String] {
+        getAllDevices().filter { device in
+            var address = AudioObjectPropertyAddress(
+                mSelector: kAudioDevicePropertyDeviceIsRunningSomewhere,
+                mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain
+            )
+            var running: UInt32 = 0
+            var size = UInt32(MemoryLayout<UInt32>.size)
+            return AudioObjectGetPropertyData(device.id, &address, 0, nil, &size, &running) == noErr && running != 0
+        }.map(\.name)
+    }
+
+    /// Apps currently recording, with the input devices they use (macOS 14+, diagnostics)
+    public func recordingProcesses() -> [String] {
+        guard #available(macOS 14.0, *) else { return [] }
+        let system = AudioObjectID(kAudioObjectSystemObject)
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyProcessObjectList,
+            mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain
+        )
+        var size: UInt32 = 0
+        guard AudioObjectGetPropertyDataSize(system, &address, 0, nil, &size) == noErr, size > 0 else { return [] }
+        var processes = [AudioObjectID](repeating: 0, count: Int(size) / MemoryLayout<AudioObjectID>.size)
+        guard AudioObjectGetPropertyData(system, &address, 0, nil, &size, &processes) == noErr else { return [] }
+        let names = Dictionary(getAllDevices().map { ($0.id, $0.name) }, uniquingKeysWith: { a, _ in a })
+
+        return processes.compactMap { process in
+            var running: UInt32 = 0
+            var runningSize = UInt32(MemoryLayout<UInt32>.size)
+            var runningAddress = AudioObjectPropertyAddress(
+                mSelector: kAudioProcessPropertyIsRunningInput,
+                mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain
+            )
+            guard AudioObjectGetPropertyData(process, &runningAddress, 0, nil, &runningSize, &running) == noErr,
+                  running != 0 else { return nil }
+
+            var bundle: Unmanaged<CFString>?
+            var bundleSize = UInt32(MemoryLayout<CFString>.size)
+            var bundleAddress = AudioObjectPropertyAddress(
+                mSelector: kAudioProcessPropertyBundleID,
+                mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain
+            )
+            AudioObjectGetPropertyData(process, &bundleAddress, 0, nil, &bundleSize, &bundle)
+            let id = (bundle?.takeRetainedValue() as String?) ?? "pid?"
+
+            var devicesAddress = AudioObjectPropertyAddress(
+                mSelector: kAudioProcessPropertyDevices,
+                mScope: kAudioObjectPropertyScopeInput, mElement: kAudioObjectPropertyElementMain
+            )
+            var devicesSize: UInt32 = 0
+            AudioObjectGetPropertyDataSize(process, &devicesAddress, 0, nil, &devicesSize)
+            var devices = [AudioDeviceID](repeating: 0, count: Int(devicesSize) / MemoryLayout<AudioDeviceID>.size)
+            if !devices.isEmpty { AudioObjectGetPropertyData(process, &devicesAddress, 0, nil, &devicesSize, &devices) }
+            return "\(id) ← \(devices.map { names[$0] ?? "\($0)" }.joined(separator: "+"))"
+        }
+    }
+
     /// Find Bluetooth audio devices
     public func getBluetoothDevices() -> [AudioDeviceInfo] {
         return getAllDevices().filter { $0.isBluetooth }
