@@ -560,7 +560,13 @@ public actor LocalAgent {
                 let input = call.function.arguments.mapValues(\.anyValue)
                 logger.info("Tool call: \(name)")
                 let result: String
-                if name == "say_to_caller" && outgoingCall == true && !heardCaller {
+                if name == "say_to_caller" && outgoingCall == nil && !toolExecutor.isInCall {
+                    // Nobody on the line: the text is meant for the user
+                    logger.info("say_to_caller without a call: replying to the user")
+                    let text = (input["text"] as? String) ?? ""
+                    conversationHistory.append(ChatMessage(role: "tool", content: #"{"error":"No call in progress: shown to the user instead.","success":false}"#, toolName: name))
+                    return text
+                } else if name == "say_to_caller" && outgoingCall == true && !heardCaller {
                     // Outgoing call: never speak first (it's usually an IVR)
                     logger.info("say_to_caller blocked: nobody has spoken yet")
                     result = #"{"error":"Refused: nobody has spoken yet. Listen first; if it's a voice server, use send_dtmf. Answer WAIT.","success":false}"#
@@ -568,6 +574,16 @@ public actor LocalAgent {
                     // Small models sometimes "dial" a number heard in a voice menu mid-call
                     logger.info("dial_number blocked: a call is in progress")
                     result = #"{"error":"Refused: a call is already in progress. For a voice menu, use send_dtmf; otherwise answer WAIT.","success":false}"#
+                } else if name == "send_dtmf" && outgoingCall == nil && !toolExecutor.isInCall,
+                          let raw = (input["digits"] ?? input["digit"]).map({ "\($0)" }) {
+                    // No call yet: "call *2994" sometimes comes out as keys. Dial the number instead.
+                    let number = numberAsTyped(raw.trimmingCharacters(in: CharacterSet(charactersIn: "# ")))
+                    if missionNotes.contains(where: { Self.numbers(in: $0).contains(Self.digitsOnly(number)) }) {
+                        logger.info("send_dtmf without a call: dialing \(number)")
+                        result = toolExecutor.execute(toolName: "dial_number", input: ["number": number])
+                    } else {
+                        result = #"{"error":"Refused: no call in progress, keys can't be sent. To place a call, use dial_number with the number the user gave.","success":false}"#
+                    }
                 } else if name == "send_dtmf", let refusal = dtmfRefusal(input, alreadySent: keysSent) {
                     logger.info("send_dtmf blocked: \(refusal)")
                     result = #"{"error":"\#(refusal)","success":false}"#

@@ -475,7 +475,8 @@ public final class PhoneSession: @unchecked Sendable {
                 label: L("Accessibility", "Accessibilité"),
                 ok: ax,
                 detail: ax ? L("Allowed (dial / answer automatically)", "Autorisé (composer / décrocher automatiquement)")
-                    : L("System Settings › Privacy & Security › Accessibility › turn on PhoneBT", "Réglages Système › Confidentialité et sécurité › Accessibilité › active PhoneBT")
+                    : L("Not allowed for this version of PhoneBT. If PhoneBT is already switched on in System Settings, that entry is for a previous build: click \"Reset permission\", then switch PhoneBT on again.",
+                        "Pas autorisé pour cette version de PhoneBT. Si PhoneBT est déjà coché dans les Réglages, c'est l'autorisation d'une ancienne version : clique « Réinitialiser l'autorisation », puis réactive PhoneBT.")
             ))
         }
 

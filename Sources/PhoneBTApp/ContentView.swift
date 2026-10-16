@@ -272,8 +272,16 @@ private struct Sidebar: View {
                             Text(check.detail).font(.caption).foregroundStyle(.secondary)
                                 .fixedSize(horizontal: false, vertical: true)
                             if !check.ok, let url = Self.settingsURL(for: check.label) {
-                                Button(L("Open Settings", "Ouvrir les réglages")) { NSWorkspace.shared.open(url) }
-                                    .controlSize(.small)
+                                HStack {
+                                    Button(L("Open Settings", "Ouvrir les réglages")) { NSWorkspace.shared.open(url) }
+                                    if check.label == L("Accessibility", "Accessibilité") {
+                                        Button(L("Reset permission", "Réinitialiser l'autorisation")) {
+                                            ContinuityCalls.resetAccessibility()
+                                            NSWorkspace.shared.open(url)
+                                        }
+                                    }
+                                }
+                                .controlSize(.small)
                             }
                         }
                     }

@@ -165,6 +165,17 @@ public final class ContinuityCalls: @unchecked Sendable {
         _ = AXIsProcessTrustedWithOptions([key: true] as CFDictionary)
     }
 
+    /// Remove PhoneBT's Accessibility entry, then ask again. An ad hoc signed rebuild keeps
+    /// the old entry switched on in System Settings, but it no longer matches the app.
+    public static func resetAccessibility() {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/tccutil")
+        process.arguments = ["reset", "Accessibility", Bundle.main.bundleIdentifier ?? "com.phonebt.app"]
+        try? process.run()
+        process.waitUntilExit()
+        requestAccessibility()
+    }
+
     /// Place a call through the iPhone. Opens the tel: URL and confirms the call prompt.
     /// - Parameter started: true once the call is ringing, i.e. no confirmation is needed anymore
     @discardableResult

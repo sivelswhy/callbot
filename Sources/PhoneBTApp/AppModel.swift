@@ -121,6 +121,18 @@ final class AppModel: ObservableObject {
         ) { [weak self] _ in
             Task { @MainActor in await self?.runChecks() }
         }
+        // System Settings doesn't activate PhoneBT when the switch is toggled: watch the
+        // Accessibility state so the marker turns green as soon as it's granted
+        Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.refreshAccessibilityCheck() }
+        }
+    }
+
+    private func refreshAccessibilityCheck() {
+        let label = L("Accessibility", "Accessibilité")
+        guard let index = checks.firstIndex(where: { $0.label == label }),
+              checks[index].ok != ContinuityCalls.isAccessibilityTrusted else { return }
+        Task { await runChecks() }
     }
 
     // MARK: Derived state
