@@ -46,10 +46,10 @@ public final class BluetoothManager: NSObject, @unchecked Sendable {
     /// Bluetooth privacy authorization for this app. Without it, IOBluetooth silently does nothing.
     public static var authorizationStatus: String {
         switch CBManager.authorization {
-        case .allowedAlways: return "autorisé"
-        case .denied: return "refusé"
+        case .allowedAlways: return L("allowed", "autorisé")
+        case .denied: return L("denied", "refusé")
         case .restricted: return "restreint"
-        case .notDetermined: return "pas encore demandé"
+        case .notDetermined: return L("not asked yet", "pas encore demandé")
         @unknown default: return "inconnu"
         }
     }

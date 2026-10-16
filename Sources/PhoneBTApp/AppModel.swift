@@ -24,9 +24,16 @@ import Shared
 @MainActor
 final class AppModel: ObservableObject {
     enum InputMode: String, CaseIterable, Identifiable {
-        case agent = "Instruction à l'agent"
-        case say = "Dire dans l'appel"
+        case agent
+        case say
         var id: String { rawValue }
+
+        var label: String {
+            switch self {
+            case .agent: return L("Instruction to the agent", "Instruction à l'agent")
+            case .say: return L("Say in the call", "Dire dans l'appel")
+            }
+        }
     }
 
     let session = PhoneSession()
@@ -63,6 +70,23 @@ final class AppModel: ObservableObject {
     /// Language spoken by the other party ("auto" = Whisper detects it)
     @Published var callLanguage = "auto" {
         didSet { session.setCallLanguage(callLanguage == "auto" ? nil : callLanguage) }
+    }
+
+    /// Language of the app
+    @Published var uiLanguage = UILanguage.current {
+        didSet {
+            UILanguage.current = uiLanguage
+            UserDefaults.standard.set(uiLanguage.rawValue, forKey: "uiLanguage")
+            Task { await runChecks() }
+        }
+    }
+    /// Language the agent uses with the user (reports, questions, translations of the call)
+    @Published var agentLanguage = UILanguage.agent {
+        didSet {
+            UILanguage.agent = agentLanguage
+            UserDefaults.standard.set(agentLanguage.rawValue, forKey: "agentLanguage")
+            restartAgentIfRunning()
+        }
     }
 
     @Published var profileText = ""
@@ -130,7 +154,7 @@ final class AppModel: ObservableObject {
                 connectedName = device.name
                 state = session.state
             } catch {
-                append(SessionLogEntry(kind: .error, text: "Connexion échouée : \(error.localizedDescription)"))
+                append(SessionLogEntry(kind: .error, text: L("Connection failed: ", "Connexion échouée : ") + error.localizedDescription))
             }
             isConnecting = false
         }
@@ -161,7 +185,7 @@ final class AppModel: ObservableObject {
 
     /// Answer from the question pop-up: a clicked option is sent as the user's choice
     func chooseOption(_ option: String) {
-        answerQuestion("Je choisis : \(option)")
+        answerQuestion(L("I choose: ", "Je choisis : ") + option)
     }
 
     /// Answer from the question pop-up
@@ -184,7 +208,7 @@ final class AppModel: ObservableObject {
         NSApp.requestUserAttention(.criticalRequest)
         NSApp.activate(ignoringOtherApps: true)
         let content = UNMutableNotificationContent()
-        content.title = "L'agent a besoin de toi"
+        content.title = L("The agent needs you", "L'agent a besoin de toi")
         content.body = question
         content.sound = .default
         UNUserNotificationCenter.current().add(
@@ -225,10 +249,10 @@ final class AppModel: ObservableObject {
     func saveProfile() {
         do {
             try session.saveProfile(profileText)
-            append(SessionLogEntry(kind: .system, text: "Infos enregistrées"))
+            append(SessionLogEntry(kind: .system, text: L("Info saved", "Infos enregistrées")))
             restartAgentIfRunning()
         } catch {
-            append(SessionLogEntry(kind: .error, text: "Enregistrement impossible : \(error.localizedDescription)"))
+            append(SessionLogEntry(kind: .error, text: L("Couldn't save: ", "Enregistrement impossible : ") + error.localizedDescription))
         }
     }
 
@@ -256,10 +280,11 @@ final class AppModel: ObservableObject {
             inputMode = .agent
             alertUser(question: entry.text)
         }
-        if entry.text.hasPrefix("Agent IA arrêté") || entry.text.hasPrefix("Téléphone déconnecté") {
+        let phoneLost = ["Phone disconnected", "Téléphone déconnecté"].contains { entry.text.hasPrefix($0) }
+        if phoneLost || ["AI agent stopped", "Agent IA arrêté"].contains(where: { entry.text.hasPrefix($0) }) {
             agentEnabled = false
         }
-        if entry.text.hasPrefix("Téléphone déconnecté") {
+        if phoneLost {
             connectedName = nil
         }
     }

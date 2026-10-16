@@ -80,11 +80,11 @@ public enum PhoneTools {
         name: "ask_user",
         description: "Ask the user (the person you work for, watching the app) for information you don't have or a decision, e.g. which voice-menu option to choose, a code or a customer number. The answer arrives in a later message; meanwhile ask a human caller to hold on (never talk to a voice server).",
         properties: [
-            "question": ["type": "string", "description": "The question for the user, in French"],
+            "question": ["type": "string", "description": "The question for the user, in the user's language"],
             "options": [
                 "type": "array",
                 "items": ["type": "string"],
-                "description": "Optional short answers the user can click, in French. For a voice menu, one per option with its key, e.g. '1 — service pour ce numéro'",
+                "description": "Optional short answers the user can click, in the user's language. For a voice menu, one per option with its key, e.g. '1 — service for this number'",
             ],
         ],
         required: ["question"]

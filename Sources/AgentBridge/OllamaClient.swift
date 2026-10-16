@@ -13,6 +13,7 @@
 // limitations under the License.
 
 import Foundation
+import Shared
 
 // MARK: - JSON value
 
@@ -292,11 +293,11 @@ public enum OllamaError: Error, LocalizedError {
     public var errorDescription: String? {
         switch self {
         case .unreachable(let url):
-            return "Ollama injoignable sur \(url) — lance-le avec `ollama serve` (ou l'app Ollama)."
+            return L("Ollama unreachable at \(url) — start it with `ollama serve` (or the Ollama app).", "Ollama injoignable sur \(url) — lance-le avec `ollama serve` (ou l'app Ollama).")
         case .modelMissing(let model, let installed):
-            return "Modèle '\(model)' absent. Installe-le avec `ollama pull \(model)`. Installés : \(installed.joined(separator: ", "))"
+            return L("Model '\(model)' missing. Install it with `ollama pull \(model)`. Installed: ", "Modèle '\(model)' absent. Installe-le avec `ollama pull \(model)`. Installés : ") + installed.joined(separator: ", ")
         case .invalidResponse:
-            return "Réponse invalide d'Ollama"
+            return L("Invalid response from Ollama", "Réponse invalide d'Ollama")
         case .httpError(let code, let body):
             return "Erreur Ollama (\(code)) : \(body)"
         }

@@ -50,60 +50,56 @@ public actor LocalAgent {
     private let maxHistoryMessages = 40
 
     public static let baseSystemPrompt = """
-        Tu es un assistant téléphonique qui agit AU NOM de l'utilisateur (la personne pour \
-        qui tu travailles, qui te suit depuis son ordinateur). Tu passes et reçois des appels \
-        via son téléphone connecté en Bluetooth. L'« interlocuteur » est la personne ou le \
-        serveur vocal au bout du fil — ce n'est pas l'utilisateur.
+        You are a phone assistant acting ON BEHALF of the user (the person you work for, who \
+        follows you from their computer). You place and receive calls through their phone \
+        connected over Bluetooth. The "caller" is the person or voice server on the line — \
+        not the user.
 
-        Types de messages que tu reçois :
-        - Messages sans préfixe : instructions ou réponses de l'utilisateur.
-        - [CALLER SPEECH lang=xx appel=sortant|entrant] "..." : transcription de ce que dit \
-        l'interlocuteur (xx = langue détectée : fr, he, en…). La transcription peut contenir \
-        des erreurs. Si elle est suivie de (MENU), c'est un serveur vocal qui énonce des options.
-        - [PHONE EVENT] : événement du téléphone (appel entrant, audio connecté, fin d'appel…).
-        - [NOTE] : information de contexte (par ex. ce que l'utilisateur a dit lui-même dans l'appel).
+        Messages you receive:
+        - Messages without a prefix: instructions or answers from the user.
+        - [CALLER SPEECH lang=xx call=outgoing|incoming] "...": transcription of what the caller \
+        says (xx = detected language: en, fr, es…). The transcription may contain errors. If it \
+        is followed by (MENU), a voice server is reading options.
+        - [PHONE EVENT]: phone event (incoming call, audio connected, call ended…).
+        - [NOTE]: context (e.g. what the user said themselves in the call).
 
-        Règles pendant un appel :
-        - Pour parler à l'interlocuteur, utilise TOUJOURS l'outil say_to_caller : c'est le seul \
-        moyen qu'il t'entende. Ne répète jamais ce que l'interlocuteur vient de dire.
-        - Réponds dans la langue de l'interlocuteur (champ lang) et passe-la dans le paramètre \
-        language de say_to_caller, quelle que soit cette langue.
-        - Phrases courtes et naturelles, comme à l'oral (une ou deux phrases), sans emoji, \
-        sans markdown, sans liste.
-        - Serveur vocal (menu automatique) : écoute les options (« pour X, tapez 1 », \
-        « press 1 for X ») et choisis avec send_dtmf celle qui sert la mission. Si on te demande \
-        de saisir un numéro (identité, client, date…), envoie-le avec send_dtmf, suivi \
-        de # si demandé. Ne parle pas à un serveur vocal sauf s'il demande une réponse orale.
-        - Si tu n'as rien à dire (le serveur vocal parle encore, musique d'attente, phrase \
-        incomplète), réponds uniquement par le mot ATTENTE, sans outil.
-        - S'il te manque une information ou une décision, utilise ask_user (avec options \
-        quand il y a des choix possibles), puis demande poliment à un interlocuteur humain de \
-        patienter. N'invente jamais une information : ni numéro de client, ni code, ni \
-        identité. Quand un serveur vocal demande un identifiant que tu n'as pas, ask_user.
-        - Ne communique les données personnelles de l'utilisateur que si elles sont \
-        nécessaires pour la mission et demandées.
-        - Quand la mission est accomplie ou que l'interlocuteur dit au revoir, salue-le puis \
-        utilise end_call, et fais un bref résumé à l'utilisateur.
+        Rules during a call:
+        - To talk to the caller, ALWAYS use the say_to_caller tool: it is the only way they can \
+        hear you. Never repeat what the caller just said.
+        - Answer in the caller's language (lang field) and pass it in the language parameter of \
+        say_to_caller, whatever that language is.
+        - Short, natural sentences, as when speaking (one or two sentences), no emoji, no \
+        markdown, no lists.
+        - Voice server (automated menu): listen to the options ("for X, press 1", "pour X, \
+        tapez 1") and choose with send_dtmf the one that serves the mission. If you are asked to \
+        enter a number (ID, customer number, date…), send it with send_dtmf, followed by # if \
+        requested. Don't talk to a voice server unless it asks for a spoken answer.
+        - If you have nothing to say (the voice server is still talking, hold music, incomplete \
+        sentence), answer only with the word WAIT, without any tool.
+        - If you are missing information or a decision, use ask_user (with options when there \
+        are possible choices), then politely ask a human caller to hold on. Never make up \
+        information: no customer number, code or identity. When a voice server asks for an \
+        identifier you don't have, use ask_user.
+        - Only share the user's personal data when it is needed for the mission and requested.
+        - When the mission is done or the caller says goodbye, say goodbye, then use end_call, \
+        and give the user a short summary.
 
-        Tes réponses à l'utilisateur ne commencent jamais par un préfixe entre crochets. \
-        Pour un appel que tu as passé toi-même, tu n'as rien à décrocher : « appel actif » \
-        signifie que l'interlocuteur a répondu.
+        Your answers to the user never start with a bracketed prefix. For a call you placed \
+        yourself, there is nothing to pick up: "call active" means the other party answered.
 
-        Quand l'utilisateur te demande d'appeler quelqu'un, utilise dial_number et retiens la \
-        mission. Appel sortant : ÉCOUTE D'ABORD, ne parle jamais en premier. La plupart des \
-        numéros de service (*xxxx, 1-800…) répondent par un serveur vocal : écoute les \
-        options et navigue dans le menu avec send_dtmf, en choisissant à chaque étape \
-        l'option la plus proche de la mission ; si le menu n'est pas fini, réponds ATTENTE. \
-        Ne parle que lorsqu'un humain répond (« allô », « hello, this is… », « bonjour, \
-        service client… ») ou qu'un serveur vocal te demande explicitement de parler. Alors \
-        présente-toi une seule fois et expose directement la raison de ton appel, par \
-        exemple « Bonjour, je suis l'assistant de Jean Dupont, je vous appelle au sujet de… ». \
-        Ne dis jamais « je m'appelle l'assistant de ». Ne demande jamais à l'interlocuteur \
-        l'objet de l'appel ni ce que tu peux faire pour lui. Un menu vocal t'arrive en entier \
-        (MENU COMPLET) : choisis alors UNE touche avec send_dtmf. Si aucune option ne correspond \
-        clairement à la mission, ou si tu ne connais pas la mission, utilise ask_user en \
-        listant les options traduites en français, et attends la réponse. Si l'appel se \
-        termine sans avoir abouti (occupé, pas de réponse), préviens l'utilisateur. Avec l'utilisateur, parle français, sois concis et rends compte clairement.
+        When the user asks you to call someone, use dial_number and remember the mission. \
+        Outgoing call: LISTEN FIRST, never speak first. Most service numbers (short codes, \
+        1-800…) answer with a voice server: listen to the options and navigate the menu with \
+        send_dtmf, choosing at each step the option closest to the mission; if the menu isn't \
+        finished, answer WAIT. Only speak when a human answers ("hello", "allô", "this is Dana, \
+        how can I help?") or a voice server explicitly asks you to speak. Then introduce yourself \
+        once and state the reason for your call directly, for example "Hello, I'm John Smith's \
+        assistant, I'm calling about…". Never ask the other party what the call is about or \
+        what you can do for them. A voice menu reaches you in full (FULL MENU): then choose ONE \
+        key with send_dtmf. If no option clearly matches the mission, or if you don't know the \
+        mission, use ask_user listing the options translated into {USER_LANGUAGE}, and wait for \
+        the answer. If the call ends without success (busy, no answer), tell the user. With the \
+        user, speak {USER_LANGUAGE} (also in ask_user), be concise and report clearly.
         """
 
     public init(
@@ -132,19 +128,20 @@ public actor LocalAgent {
             prompt += """
 
 
-                Mode réponse automatique : les appels ENTRANTS sont décrochés automatiquement. \
-                Pour un appel entrant, dès que l'audio est connecté, salue l'interlocuteur avec \
-                say_to_caller (« Bonjour, je suis l'assistant de … »), une seule fois, et demande \
-                l'objet de son appel. Ne fais pas cela pour un appel que tu as toi-même passé.
+                Auto-answer mode: INCOMING calls are picked up automatically. For an incoming \
+                call, as soon as audio is connected, greet the caller in {USER_LANGUAGE} with \
+                say_to_caller ("Hello, I'm …'s assistant"), only once, and ask what the call is \
+                about; then continue in the caller's language. Don't \
+                do this for a call you placed yourself.
                 """
         }
         if let profile = userProfile?.trimmingCharacters(in: .whitespacesAndNewlines), !profile.isEmpty {
-            prompt += "\n\nInformations sur l'utilisateur (à utiliser pour ses démarches) :\n\(profile)"
+            prompt += "\n\nAbout the user (to use for their requests):\n\(profile)"
         }
         if let extra = extraInstructions?.trimmingCharacters(in: .whitespacesAndNewlines), !extra.isEmpty {
-            prompt += "\n\nInstructions spécifiques :\n\(extra)"
+            prompt += "\n\nSpecific instructions:\n\(extra)"
         }
-        return prompt
+        return prompt.replacingOccurrences(of: "{USER_LANGUAGE}", with: UILanguage.agent.englishName)
     }
 
     /// Load the model into memory so the first call doesn't wait
@@ -170,13 +167,13 @@ public actor LocalAgent {
     public func injectCallerSpeech(_ text: String, language: String? = nil, completeMenu: Bool = false) async throws -> String {
         heardCaller = true
         var attributes = language.map { " lang=\($0)" } ?? ""
-        if let outgoingCall { attributes += outgoingCall ? " appel=sortant" : " appel=entrant" }
+        if let outgoingCall { attributes += outgoingCall ? " call=outgoing" : " call=incoming" }
         let tag = "[CALLER SPEECH\(attributes)]"
         let menu: String
         if completeMenu {
-            menu = " (MENU COMPLET) — serveur vocal : si une option correspond clairement à la mission, tape-la avec send_dtmf (une seule touche, sans parler). Si tu hésites, si tu ne connais pas la mission, ou s'il demande un identifiant que tu n'as pas : ask_user avec les options traduites (ex. '1 — service pour ce numéro'). Si le message n'attend aucune touche : ATTENTE"
+            menu = " (FULL MENU) — voice server: if an option clearly matches the mission, press it with send_dtmf (a single key, without speaking). If you're unsure, don't know the mission, or it asks for an identifier you don't have: ask_user with the options translated (e.g. '1 — service for this number'). If the message expects no key: WAIT"
         } else if ivrMode || Self.looksLikeMenu(text) {
-            menu = " (MENU) — serveur vocal : choisis l'option avec send_dtmf sans parler, ou réponds ATTENTE si le menu n'est pas fini"
+            menu = " (MENU) — voice server: choose the option with send_dtmf without speaking, or answer WAIT if the menu isn't finished"
         } else {
             menu = ""
         }
@@ -224,7 +221,7 @@ public actor LocalAgent {
                         onResponse(response)
                     }
                 } catch {
-                    onResponse("Erreur agent : \(error.localizedDescription)")
+                    onResponse("Agent error: \(error.localizedDescription)")
                 }
             }
             return nil
@@ -240,11 +237,11 @@ public actor LocalAgent {
         let raw = (input["digits"] ?? input["digit"]).map { "\($0)" } ?? ""
         let digits = Self.digitsOnly(raw)
         if alreadySent {
-            return "Refusé : une seule saisie à la fois. Attends la réponse du serveur vocal."
+            return "Refused: one entry at a time. Wait for the voice server's answer."
         }
         // One or two keys = a menu choice. Longer = an identifier: it must come from the user.
         if digits.count > 2 && !knownDigits.contains(digits) {
-            return "Refusé : n'invente jamais un numéro. Demande-le avec ask_user (ou réponds ATTENTE)."
+            return "Refused: never make up a number. Ask for it with ask_user (or answer WAIT)."
         }
         return nil
     }
@@ -300,23 +297,23 @@ public actor LocalAgent {
                         await self.setOutgoingCall(false)
                         response = try await self.handleIncomingCall(number: number)
                     case .callEnded:
-                        response = try await self.injectEvent("L'appel est terminé (n'utilise pas end_call, il est déjà raccroché) — fais un bref résumé à l'utilisateur")
+                        response = try await self.injectEvent("The call has ended (don't use end_call, it's already hung up) — give the user a short summary")
                         await self.setOutgoingCall(nil)
                     case .callActive:
                         // Audio isn't connected yet: the agent can't be heard, so don't
                         // make it speak now (it would greet again on scoConnected)
-                        await self.addNote("L'appel est maintenant actif — attends que l'audio soit connecté")
+                        await self.addNote("The call is now active — wait for the audio to be connected")
                         response = nil
                     case .scoConnected:
                         if await self.outgoingCall == true {
                             // Outgoing: listen first (often an IVR), speak only once someone talks
-                            await self.addNote("Audio connecté — écoute : un serveur vocal ou un humain va parler")
+                            await self.addNote("Audio connected — listen: a voice server or a human is about to speak")
                             response = nil
                         } else {
-                            response = try await self.injectEvent("Audio connecté — tu peux maintenant entendre et parler à l'interlocuteur\(await self.directionHint)")
+                            response = try await self.injectEvent("Audio connected — you can now hear and talk to the caller\(await self.directionHint)")
                         }
                     case .scoDisconnected:
-                        response = try await self.injectEvent("Audio déconnecté")
+                        response = try await self.injectEvent("Audio disconnected")
                     case .callerSpeech(let text, let language):
                         response = try await self.receiveCallerSpeech(text, language: language, onResponse: onResponse)
                     default:
@@ -327,7 +324,7 @@ public actor LocalAgent {
                     }
                 } catch {
                     self.logger.error("Failed to process event: \(error)")
-                    onResponse("Erreur agent : \(error.localizedDescription)")
+                    onResponse("Agent error: \(error.localizedDescription)")
                 }
             }
         }
@@ -394,21 +391,21 @@ public actor LocalAgent {
     private var directionHint: String {
         switch outgoingCall {
         case true?:
-            return " (appel SORTANT : c'est toi qui appelles — écoute d'abord ; serveur vocal → send_dtmf ; humain → présente-toi et expose la raison de ton appel, sans lui demander l'objet de l'appel)"
+            return " (OUTGOING call: you are the one calling — listen first; voice server → send_dtmf; human → introduce yourself and state the reason for your call, without asking them what the call is about)"
         case false?:
-            return " (appel ENTRANT : l'interlocuteur t'a appelé)"
+            return " (INCOMING call: the caller called you)"
         case nil:
             return ""
         }
     }
 
     private func handleIncomingCall(number: String?) async throws -> String {
-        let caller = number ?? "numéro inconnu"
+        let caller = number ?? "unknown number"
         guard autoAnswer else {
-            return try await injectEvent("Appel entrant de \(caller)")
+            return try await injectEvent("Incoming call from \(caller)")
         }
         let result = toolExecutor.execute(toolName: "accept_call", input: [:])
-        return try await injectEvent("Appel entrant de \(caller) — décroché automatiquement (\(result))")
+        return try await injectEvent("Incoming call from \(caller) — answered automatically (\(result))")
     }
 
     private func runAgentLoop(speakFallback: Bool) async throws -> String {
@@ -445,18 +442,18 @@ public actor LocalAgent {
                 if name == "say_to_caller" && outgoingCall == true && !heardCaller {
                     // Outgoing call: never speak first (it's usually an IVR)
                     logger.info("say_to_caller blocked: nobody has spoken yet")
-                    result = #"{"error":"Refusé : personne n'a encore parlé. Écoute d'abord ; si c'est un serveur vocal, utilise send_dtmf. Réponds ATTENTE.","success":false}"#
+                    result = #"{"error":"Refused: nobody has spoken yet. Listen first; if it's a voice server, use send_dtmf. Answer WAIT.","success":false}"#
                 } else if name == "dial_number" && toolExecutor.isInCall {
                     // Small models sometimes "dial" a number heard in a voice menu mid-call
                     logger.info("dial_number blocked: a call is in progress")
-                    result = #"{"error":"Refusé : un appel est déjà en cours. Pour un menu vocal, utilise send_dtmf ; sinon réponds ATTENTE.","success":false}"#
+                    result = #"{"error":"Refused: a call is already in progress. For a voice menu, use send_dtmf; otherwise answer WAIT.","success":false}"#
                 } else if name == "send_dtmf", let refusal = dtmfRefusal(input, alreadySent: keysSent) {
                     logger.info("send_dtmf blocked: \(refusal)")
                     result = #"{"error":"\#(refusal)","success":false}"#
                 } else if name == "say_to_caller" && ivrMode && !menuWantsSpeech {
                     // A voice menu doesn't understand speech: keys only, until a human answers
                     logger.info("say_to_caller blocked: IVR")
-                    result = #"{"error":"Refusé : c'est un serveur vocal, il ne comprend pas la parole. Utilise send_dtmf, ou ask_user si tu ne sais pas quelle touche choisir, ou réponds ATTENTE.","success":false}"#
+                    result = #"{"error":"Refused: this is a voice server, it doesn't understand speech. Use send_dtmf, or ask_user if you don't know which key to choose, or answer WAIT.","success":false}"#
                 } else {
                     result = toolExecutor.execute(toolName: name, input: input)
                 }
@@ -492,7 +489,7 @@ public actor LocalAgent {
     /// The model chose to stay silent (IVR still talking, hold music…)
     static func isWaitMarker(_ text: String) -> Bool {
         let t = text.trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters)).uppercased()
-        return t.isEmpty || t == "ATTENTE" || t == "WAIT"
+        return t.isEmpty || t == "WAIT" || t == "ATTENTE"
     }
 
     /// Keep the context small: drop the oldest messages, never starting on a tool result

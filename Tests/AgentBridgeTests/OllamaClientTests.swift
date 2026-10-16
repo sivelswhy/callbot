@@ -104,7 +104,7 @@ final class OllamaClientTests: XCTestCase {
         )
         let messages = [
             ChatMessage(role: "system", content: prompt),
-            ChatMessage(role: "user", content: "Appelle Bezeq au 199 pour connaître le solde de ma facture"),
+            ChatMessage(role: "user", content: "Appelle mon fournisseur internet au 199 pour connaître le solde de ma facture"),
             ChatMessage(role: "user", content: "[PHONE EVENT] Audio connecté"),
             ChatMessage(role: "user", content: #"[CALLER SPEECH lang=he] "נא הקישו את מספר תעודת הזהות ובסיומו סולמית""#),
         ]

@@ -7,12 +7,12 @@
     <key>CFBundleName</key>
     <string>PhoneBT</string>
     <key>NSBluetoothAlwaysUsageDescription</key>
-    <string>PhoneBT se connecte à ton téléphone en Bluetooth (profil mains-libres) pour passer et recevoir des appels.</string>
+    <string>PhoneBT connects to your phone over Bluetooth (hands-free profile) to place and receive calls.</string>
     <key>NSAudioCaptureUsageDescription</key>
-    <string>PhoneBT capte le son de l'appel joué par le Mac pour que l'agent IA entende l'interlocuteur.</string>
+    <string>PhoneBT captures the call audio played by the Mac so the AI agent can hear the caller.</string>
     <key>NSMicrophoneUsageDescription</key>
-    <string>PhoneBT écoute l'audio de l'appel pour que l'agent IA entende l'interlocuteur.</string>
+    <string>PhoneBT listens to the call audio so the AI agent can hear the caller.</string>
     <key>NSSpeechRecognitionUsageDescription</key>
-    <string>PhoneBT transcrit localement ce que dit l'interlocuteur pour l'agent IA.</string>
+    <string>PhoneBT transcribes what the caller says, locally, for the AI agent.</string>
 </dict>
 </plist>

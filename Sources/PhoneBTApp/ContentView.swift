@@ -50,6 +50,10 @@ private struct Sidebar: View {
                 callSection
                 if model.isConnected { Keypad() }
                 checksSection
+                Picker(L("App language", "Langue de l'app"), selection: $model.uiLanguage) {
+                    ForEach(UILanguage.allCases, id: \.self) { Text($0.displayName).tag($0) }
+                }
+                .font(.callout)
             }
             .padding(.horizontal, 16)
             .padding(.top, 46)      // just below the window buttons
@@ -63,14 +67,14 @@ private struct Sidebar: View {
     // MARK: Phone
 
     private var phoneSection: some View {
-        SectionBox(title: "Téléphone") {
+        SectionBox(title: L("Phone", "Téléphone")) {
             if model.isConnected {
                 HStack(spacing: 8) {
                     Image(systemName: "iphone").foregroundStyle(.green)
                     VStack(alignment: .leading, spacing: 1) {
                         Text(model.connectedName ?? "iPhone").lineLimit(1)
                         if let phone = model.state?.phoneStatus {
-                            Text([phone.operatorName, "réseau \(phone.signalStrength)/5", "batterie \(phone.batteryLevel)/5"]
+                            Text([phone.operatorName, L("signal", "réseau") + " \(phone.signalStrength)/5", L("battery", "batterie") + " \(phone.batteryLevel)/5"]
                                 .compactMap { $0 }.joined(separator: " · "))
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
@@ -78,14 +82,14 @@ private struct Sidebar: View {
                         }
                     }
                     Spacer()
-                    Button("Déconnecter") { model.toggleConnection() }
+                    Button(L("Disconnect", "Déconnecter")) { model.toggleConnection() }
                         .controlSize(.small)
                 }
             } else {
                 HStack {
                     Picker("", selection: $model.selectedAddress) {
                         if model.devices.isEmpty {
-                            Text("Aucun iPhone appairé").tag(String?.none)
+                            Text(L("No paired iPhone", "Aucun iPhone appairé")).tag(String?.none)
                         }
                         ForEach(model.devices, id: \.address) { d in
                             Text(d.name).tag(Optional(d.address))
@@ -98,7 +102,7 @@ private struct Sidebar: View {
                     } label: {
                         Image(systemName: "arrow.clockwise")
                     }
-                    .help("Actualiser la liste")
+                    .help(L("Refresh the list", "Actualiser la liste"))
                 }
 
                 Button {
@@ -106,7 +110,7 @@ private struct Sidebar: View {
                 } label: {
                     HStack {
                         if model.isConnecting { ProgressView().controlSize(.small) }
-                        Text(model.isConnecting ? "Connexion…" : "Connecter")
+                        Text(model.isConnecting ? L("Connecting…", "Connexion…") : L("Connect", "Connecter"))
                     }
                     .frame(maxWidth: .infinity)
                 }
@@ -120,38 +124,44 @@ private struct Sidebar: View {
     // MARK: Agent
 
     private var agentSection: some View {
-        SectionBox(title: "Agent IA") {
+        SectionBox(title: L("AI agent", "Agent IA")) {
             Toggle(isOn: Binding(
                 get: { model.agentEnabled },
                 set: { model.agentEnabled = $0; model.setAgent(enabled: $0) }
             )) {
                 HStack(spacing: 6) {
-                    Text(model.agentEnabled ? "Actif" : "Inactif")
+                    Text(model.agentEnabled ? L("On", "Actif") : L("Off", "Inactif"))
                     if model.agentStarting { ProgressView().controlSize(.small) }
                 }
             }
             .toggleStyle(.switch)
             .disabled(!model.isConnected || model.agentStarting)
-            .help(model.isConnected ? "L'agent passe et reçoit les appels pour toi" : "Connecte d'abord ton iPhone")
+            .help(model.isConnected ? L("The agent places and receives calls for you", "L'agent passe et reçoit les appels pour toi") : L("Connect your iPhone first", "Connecte d'abord ton iPhone"))
 
-            Toggle("Répondre aux appels entrants", isOn: $model.autoAnswer)
+            Toggle(L("Answer incoming calls", "Répondre aux appels entrants"), isOn: $model.autoAnswer)
                 .onChange(of: model.autoAnswer) { _ in model.restartAgentIfRunning() }
-                .help("L'agent décroche lui-même et demande l'objet de l'appel")
+                .help(L("The agent picks up and asks what the call is about", "L'agent décroche lui-même et demande l'objet de l'appel"))
+
+            Picker(L("Agent language", "Langue de l'agent"), selection: $model.agentLanguage) {
+                ForEach(UILanguage.allCases, id: \.self) { Text($0.displayName).tag($0) }
+            }
+            .help(L("Language the agent uses with you (reports, questions, translations of the call) and to greet callers",
+                    "Langue que l'agent utilise avec toi (comptes rendus, questions, traductions de l'appel) et pour saluer les appelants"))
 
             Button {
                 model.showProfile = true
             } label: {
-                Label("Mes infos…", systemImage: "person.text.rectangle")
+                Label(L("My info…", "Mes infos…"), systemImage: "person.text.rectangle")
             }
             .buttonStyle(.link)
-            .help("Nom, numéros de client… utilisés par l'agent pour tes démarches")
+            .help(L("Name, customer numbers… used by the agent for your requests", "Nom, numéros de client… utilisés par l'agent pour tes démarches"))
         }
     }
 
     // MARK: Call
 
     private var callSection: some View {
-        SectionBox(title: "Appel") {
+        SectionBox(title: L("Call", "Appel")) {
             HStack(spacing: 8) {
                 Circle()
                     .fill(statusColor)
@@ -169,14 +179,14 @@ private struct Sidebar: View {
                         Button {
                             model.session.answer()
                         } label: {
-                            Label("Décrocher", systemImage: "phone.fill").frame(maxWidth: .infinity)
+                            Label(L("Answer", "Décrocher"), systemImage: "phone.fill").frame(maxWidth: .infinity)
                         }
                         .tint(.green)
                     }
                     Button(role: .destructive) {
                         model.session.hangup()
                     } label: {
-                        Label("Raccrocher", systemImage: "phone.down.fill").frame(maxWidth: .infinity)
+                        Label(L("Hang up", "Raccrocher"), systemImage: "phone.down.fill").frame(maxWidth: .infinity)
                     }
                     .tint(.red)
                 }
@@ -184,7 +194,7 @@ private struct Sidebar: View {
                 .controlSize(.large)
             } else if model.isConnected {
                 HStack {
-                    TextField("Numéro à appeler", text: $model.dialNumber)
+                    TextField(L("Number to call", "Numéro à appeler"), text: $model.dialNumber)
                         .textFieldStyle(.roundedBorder)
                         .font(.body.monospacedDigit())
                         .onSubmit { model.dial() }
@@ -195,25 +205,19 @@ private struct Sidebar: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(.green)
-                    .help("Appeler")
+                    .help(L("Call", "Appeler"))
                     .disabled(model.dialNumber.isEmpty)
                 }
             }
 
-            Picker("Langue", selection: $model.callLanguage) {
-                Text("Automatique").tag("auto")
+            Picker(L("Language", "Langue"), selection: $model.callLanguage) {
+                Text(L("Automatic", "Automatique")).tag("auto")
                 Divider()
-                Text("Allemand").tag("de")
-                Text("Anglais").tag("en")
-                Text("Arabe").tag("ar")
-                Text("Espagnol").tag("es")
-                Text("Français").tag("fr")
-                Text("Hébreu").tag("he")
-                Text("Italien").tag("it")
-                Text("Portugais").tag("pt")
-                Text("Russe").tag("ru")
+                ForEach(["ar", "de", "en", "es", "fr", "he", "it", "pt", "ru"], id: \.self) { code in
+                    Text(PhoneSession.languageName(code).capitalized).tag(code)
+                }
             }
-            .help("Langue de l'interlocuteur. La choisir rend la transcription plus fiable que la détection automatique.")
+            .help(L("Language of the other party. Choosing it makes transcription more reliable than automatic detection.", "Langue de l'interlocuteur. La choisir rend la transcription plus fiable que la détection automatique."))
 
             HStack(spacing: 8) {
                 Toggle(isOn: $model.monitorEnabled) {
@@ -221,11 +225,11 @@ private struct Sidebar: View {
                 }
                 .toggleStyle(.switch)
                 .controlSize(.small)
-                .help("Entendre l'appel et la voix de l'agent sur le Mac")
+                .help(L("Hear the call and the agent's voice on the Mac", "Entendre l'appel et la voix de l'agent sur le Mac"))
                 Slider(value: $model.monitorVolume, in: 0...1)
                     .controlSize(.small)
                     .disabled(!model.monitorEnabled)
-                    .help("Volume d'écoute")
+                    .help(L("Listening volume", "Volume d'écoute"))
             }
         }
     }
@@ -241,11 +245,11 @@ private struct Sidebar: View {
                 HStack(spacing: 6) {
                     Image(systemName: problems.isEmpty ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
                         .foregroundStyle(model.checks.isEmpty ? .secondary : problems.isEmpty ? Color.green : Color.orange)
-                    Text(model.checks.isEmpty ? "Vérification…"
-                         : problems.isEmpty ? "Tout est prêt"
-                         : "\(problems.count) point\(problems.count > 1 ? "s" : "") à régler")
+                    Text(model.checks.isEmpty ? L("Checking…", "Vérification…")
+                         : problems.isEmpty ? L("All set", "Tout est prêt")
+                         : L("\(problems.count) issue\(problems.count > 1 ? "s" : "") to fix", "\(problems.count) point\(problems.count > 1 ? "s" : "") à régler"))
                     Spacer()
-                    Text(model.showChecks ? "Masquer" : "Détails")
+                    Text(model.showChecks ? L("Hide", "Masquer") : L("Details", "Détails"))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     Image(systemName: "chevron.right")
@@ -268,13 +272,13 @@ private struct Sidebar: View {
                             Text(check.detail).font(.caption).foregroundStyle(.secondary)
                                 .fixedSize(horizontal: false, vertical: true)
                             if !check.ok, let url = Self.settingsURL(for: check.label) {
-                                Button("Ouvrir les réglages") { NSWorkspace.shared.open(url) }
+                                Button(L("Open Settings", "Ouvrir les réglages")) { NSWorkspace.shared.open(url) }
                                     .controlSize(.small)
                             }
                         }
                     }
                 }
-                Button("Revérifier") { Task { await model.runChecks() } }
+                Button(L("Check again", "Revérifier")) { Task { await model.runChecks() } }
                     .controlSize(.small)
             }
         }
@@ -286,7 +290,7 @@ private struct Sidebar: View {
     private static func settingsURL(for label: String) -> URL? {
         let pane: String
         switch label {
-        case "Accessibilité": pane = "Privacy_Accessibility"
+        case "Accessibility", "Accessibilité": pane = "Privacy_Accessibility"
         case "Bluetooth": pane = "Privacy_Bluetooth"
         default: return nil
         }
@@ -294,14 +298,14 @@ private struct Sidebar: View {
     }
 
     private var statusText: String {
-        guard model.isConnected else { return "iPhone non connecté" }
+        guard model.isConnected else { return L("iPhone not connected", "iPhone non connecté") }
         let number = model.state?.activeCall?.number.flatMap { $0.isEmpty ? nil : $0 }
         switch model.callStatus {
-        case .idle: return "Prêt"
-        case .incoming: return "Appel entrant\(number.map { " · \($0)" } ?? "")"
-        case .dialing, .alerting: return "Ça sonne…"
-        case .active: return "En ligne\(number.map { " · \($0)" } ?? "")"
-        case .held: return "En attente"
+        case .idle: return L("Ready", "Prêt")
+        case .incoming: return L("Incoming call", "Appel entrant") + (number.map { " · \($0)" } ?? "")
+        case .dialing, .alerting: return L("Ringing…", "Ça sonne…")
+        case .active: return L("On the line", "En ligne") + (number.map { " · \($0)" } ?? "")
+        case .held: return L("On hold", "En attente")
         default: return model.callStatus.rawValue
         }
     }
@@ -321,7 +325,7 @@ private struct Keypad: View {
     private let keys = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "*", "0", "#"]
 
     var body: some View {
-        SectionBox(title: model.inCall ? "Touches (envoyées dans l'appel)" : "Clavier") {
+        SectionBox(title: model.inCall ? L("Keys (sent in the call)", "Touches (envoyées dans l'appel)") : L("Keypad", "Clavier")) {
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 3), spacing: 8) {
                 ForEach(keys, id: \.self) { key in
                     Button {
@@ -335,7 +339,7 @@ private struct Keypad: View {
                 }
             }
             if !model.inCall && !model.dialNumber.isEmpty {
-                Button("Effacer") { model.dialNumber.removeLast() }
+                Button(L("Delete", "Effacer")) { model.dialNumber.removeLast() }
                     .controlSize(.small)
             }
         }
@@ -376,7 +380,7 @@ private struct ConversationView: View {
                         if model.agentThinking {
                             HStack(spacing: 6) {
                                 ProgressView().controlSize(.small)
-                                Text("L'agent réfléchit…").foregroundStyle(.secondary)
+                                Text(L("The agent is thinking…", "L'agent réfléchit…")).foregroundStyle(.secondary)
                             }
                             .id("thinking")
                         }
@@ -392,11 +396,11 @@ private struct ConversationView: View {
                 HStack(alignment: .top) {
                     Image(systemName: "questionmark.bubble.fill").foregroundStyle(.orange)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("L'agent a besoin de toi").font(.callout.weight(.semibold))
+                        Text(L("The agent needs you", "L'agent a besoin de toi")).font(.callout.weight(.semibold))
                         Text(question)
                     }
                     Spacer()
-                    Button("Répondre") { model.questionPopup = question }
+                    Button(L("Answer", "Répondre")) { model.questionPopup = question }
                         .controlSize(.small)
                     Button {
                         model.pendingQuestion = nil
@@ -404,7 +408,7 @@ private struct ConversationView: View {
                         Image(systemName: "xmark")
                     }
                     .buttonStyle(.plain)
-                    .help("Ignorer")
+                    .help(L("Dismiss", "Ignorer"))
                 }
                 .padding(12)
                 .background(.orange.opacity(0.12))
@@ -418,9 +422,9 @@ private struct ConversationView: View {
                 Button {
                     model.clearLog()
                 } label: {
-                    Label("Nouvelle conversation", systemImage: "square.and.pencil")
+                    Label(L("New conversation", "Nouvelle conversation"), systemImage: "square.and.pencil")
                 }
-                .help("Effacer le fil et réinitialiser la mémoire de l'agent")
+                .help(L("Clear the thread and reset the agent's memory", "Effacer le fil et réinitialiser la mémoire de l'agent"))
             }
         }
         .onChange(of: model.pendingQuestion) { q in
@@ -439,7 +443,7 @@ private struct ConversationView: View {
         VStack(alignment: .leading, spacing: 8) {
             Picker("", selection: $model.inputMode) {
                 ForEach(AppModel.InputMode.allCases) { mode in
-                    Text(mode.rawValue).tag(mode)
+                    Text(mode.label).tag(mode)
                 }
             }
             .pickerStyle(.segmented)
@@ -481,14 +485,16 @@ private struct ConversationView: View {
         switch model.inputMode {
         case .agent:
             return model.agentEnabled
-                ? "Ex : Appelle le 03-1234567 et résilie mon abonnement internet"
-                : "Active l'agent pour lui donner des instructions"
+                ? L("E.g. Call 555-0123 and cancel my internet subscription", "Ex : Appelle le 01 23 45 67 89 et résilie mon abonnement internet")
+                : L("Turn on the agent to give it instructions", "Active l'agent pour lui donner des instructions")
         case .say:
-            guard model.audioConnected else { return "Disponible pendant un appel" }
-            if let lang = model.session.callTargetLanguage, !lang.hasPrefix("fr") {
-                return "Écris en français : traduit en \(PhoneSession.languageName(lang)) et dit dans l'appel"
+            guard model.audioConnected else { return L("Available during a call", "Disponible pendant un appel") }
+            let mine = UILanguage.agent
+            if let lang = model.session.callTargetLanguage, !lang.hasPrefix(mine.rawValue) {
+                return L("Type in \(PhoneSession.languageName(mine.rawValue)): translated into \(PhoneSession.languageName(lang)) and said in the call",
+                         "Écris en \(PhoneSession.languageName(mine.rawValue)) : traduit en \(PhoneSession.languageName(lang)) et dit dans l'appel")
             }
-            return "Texte dit à voix haute dans l'appel"
+            return L("Text spoken aloud in the call", "Texte dit à voix haute dans l'appel")
         }
     }
 }
@@ -501,13 +507,13 @@ private struct EmptyState: View {
             Image(systemName: "phone.bubble.fill")
                 .font(.system(size: 34))
                 .foregroundStyle(.tint)
-            Text("Ton assistant téléphonique").font(.title2.weight(.semibold))
+            Text(L("Your phone assistant", "Ton assistant téléphonique")).font(.title2.weight(.semibold))
             VStack(alignment: .leading, spacing: 10) {
-                step(1, "Connecte ton iPhone", done: model.isConnected)
-                step(2, "Active l'agent", done: model.agentEnabled)
-                step(3, "Donne-lui une mission ci-dessous", done: false)
+                step(1, L("Connect your iPhone", "Connecte ton iPhone"), done: model.isConnected)
+                step(2, L("Turn on the agent", "Active l'agent"), done: model.agentEnabled)
+                step(3, L("Give it a mission below", "Donne-lui une mission ci-dessous"), done: false)
             }
-            Text("Ex : « Appelle le *444 et demande le prix des appels vers la France ». Pendant l'appel, tu suis la conversation ici, traduite en français, et l'agent te demande ton avis s'il hésite.")
+            Text(L("E.g. “Call my mobile carrier and ask for the details of my last bill”. During the call, you follow the conversation here, translated if needed, and the agent asks for your input when it hesitates.", "Ex : « Appelle mon opérateur et demande le détail de ma dernière facture ». Pendant l'appel, tu suis la conversation ici, traduite si besoin, et l'agent te demande ton avis s'il hésite."))
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -535,7 +541,7 @@ private struct LogRow: View {
         case .system, .error, .keys:
             HStack(spacing: 6) {
                 Image(systemName: icon)
-                Text(entry.kind == .keys ? "Touches : \(entry.text)" : entry.text)
+                Text(entry.kind == .keys ? L("Keys: ", "Touches : ") + entry.text : entry.text)
             }
             .font(.caption)
             .foregroundStyle(entry.kind == .error ? AnyShapeStyle(.red) : AnyShapeStyle(.secondary))
@@ -553,7 +559,7 @@ private struct LogRow: View {
                         .textSelection(.enabled)
                         .fixedSize(horizontal: false, vertical: true)
                     if let translation = entry.translation {
-                        Text("🇫🇷 \(translation)")
+                        Text("↳ \(translation)")
                             .font(.callout.italic())
                             .foregroundStyle(.secondary)
                             .textSelection(.enabled)
@@ -578,12 +584,12 @@ private struct LogRow: View {
 
     private var title: String {
         switch entry.kind {
-        case .caller(let lang): return "Interlocuteur\(lang.map { " · \(Self.languageLabel($0))" } ?? "")"
-        case .agentSpoke: return "Agent (dit dans l'appel)"
-        case .agent: return "Agent → toi"
-        case .question: return "❓ Question de l'agent"
-        case .user: return "Toi → agent"
-        case .userSpoke: return "Toi (dit dans l'appel)"
+        case .caller(let lang): return L("Caller", "Interlocuteur") + (lang.map { " · \(Self.languageLabel($0))" } ?? "")
+        case .agentSpoke: return L("Agent (said in the call)", "Agent (dit dans l'appel)")
+        case .agent: return L("Agent → you", "Agent → toi")
+        case .question: return L("❓ Question from the agent", "❓ Question de l'agent")
+        case .user: return L("You → agent", "Toi → agent")
+        case .userSpoke: return L("You (said in the call)", "Toi (dit dans l'appel)")
         default: return ""
         }
     }
@@ -627,9 +633,9 @@ private struct QuestionPopup: View {
                     .font(.title)
                     .foregroundStyle(.orange)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("L'agent a besoin de toi").font(.title3.weight(.semibold))
+                    Text(L("The agent needs you", "L'agent a besoin de toi")).font(.title3.weight(.semibold))
                     if model.inCall {
-                        Text("Appel en cours — l'interlocuteur attend").font(.caption).foregroundStyle(.secondary)
+                        Text(L("Call in progress — the caller is waiting", "Appel en cours — l'interlocuteur attend")).font(.caption).foregroundStyle(.secondary)
                     }
                 }
             }
@@ -649,16 +655,16 @@ private struct QuestionPopup: View {
                     }
                 }
             }
-            TextField(model.questionOptions.isEmpty ? "Ta réponse…" : "Ou réponds autre chose…", text: $model.questionAnswer, axis: .vertical)
+            TextField(model.questionOptions.isEmpty ? L("Your answer…", "Ta réponse…") : L("Or answer something else…", "Ou réponds autre chose…"), text: $model.questionAnswer, axis: .vertical)
                 .textFieldStyle(.roundedBorder)
                 .lineLimit(1...4)
                 .focused($focused)
                 .onSubmit { model.answerQuestion(model.questionAnswer) }
             HStack {
-                Button("Plus tard") { model.questionPopup = nil }
+                Button(L("Later", "Plus tard")) { model.questionPopup = nil }
                     .keyboardShortcut(.cancelAction)
                 Spacer()
-                Button("Répondre") { model.answerQuestion(model.questionAnswer) }
+                Button(L("Answer", "Répondre")) { model.answerQuestion(model.questionAnswer) }
                     .keyboardShortcut(.defaultAction)
                     .disabled(model.questionAnswer.trimmingCharacters(in: .whitespaces).isEmpty)
             }
@@ -677,8 +683,8 @@ private struct ProfileEditor: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Mes infos").font(.title2.weight(.semibold))
-            Text("L'agent utilise ces informations pour tes démarches (opérateur, banque, administration…). Elles restent sur ce Mac et ne sont communiquées que si l'interlocuteur en a besoin.")
+            Text(L("My info", "Mes infos")).font(.title2.weight(.semibold))
+            Text(L("The agent uses this information for your requests (carrier, bank, government offices…). It stays on this Mac and is only shared when the other party needs it.", "L'agent utilise ces informations pour tes démarches (opérateur, banque, administration…). Elles restent sur ce Mac et ne sont communiquées que si l'interlocuteur en a besoin."))
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
@@ -690,15 +696,15 @@ private struct ProfileEditor: View {
 
             HStack {
                 if model.profileText.isEmpty {
-                    Button("Insérer un modèle") { model.profileText = Self.template }
+                    Button(L("Insert a template", "Insérer un modèle")) { model.profileText = Self.template }
                 }
                 Spacer()
-                Button("Annuler") {
+                Button(L("Cancel", "Annuler")) {
                     model.profileText = model.session.loadProfile()
                     dismiss()
                 }
                 .keyboardShortcut(.cancelAction)
-                Button("Enregistrer") {
+                Button(L("Save", "Enregistrer")) {
                     model.saveProfile()
                     dismiss()
                 }
@@ -709,7 +715,27 @@ private struct ProfileEditor: View {
         .frame(width: 560)
     }
 
-    static let template = """
+    static var template: String {
+        UILanguage.current == .fr ? templateFR : templateEN
+    }
+
+    static let templateEN = """
+        Full name:
+        Date of birth:
+        ID number:
+        Address:
+        Email:
+        Phone:
+
+        Mobile carrier / customer number:
+        Internet provider / customer number:
+        Bank / account number:
+
+        Languages spoken:
+        Preferences: be polite but firm, ask for a case number every time
+        """
+
+    static let templateFR = """
         Nom complet :
         Date de naissance :
         Numéro d'identité :

@@ -115,11 +115,11 @@ public final class HFPDevice: @unchecked Sendable {
                         return
                     case .disconnected(let error):
                         throw BluetoothError.connectionFailed(
-                            error?.localizedDescription ?? "Connexion refusée par le téléphone"
+                            error?.localizedDescription ?? L("Connection refused by the phone", "Connexion refusée par le téléphone")
                         )
                     case .connectFailed(let error):
                         throw BluetoothError.connectionFailed(
-                            error?.localizedDescription ?? "Connexion échouée"
+                            error?.localizedDescription ?? L("Connection failed", "Connexion échouée")
                         )
                     default:
                         continue
@@ -142,7 +142,7 @@ public final class HFPDevice: @unchecked Sendable {
             group.addTask {
                 try await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
                 throw BluetoothError.connectionFailed(
-                    "Pas de réponse du téléphone après \(Int(timeout)) s. Sur l'iPhone, vérifie que le Bluetooth est actif et que le Mac est autorisé (Réglages › Bluetooth › ce Mac), puis réessaie."
+                    L("No answer from the phone after \(Int(timeout)) s. On the iPhone, check that Bluetooth is on and the Mac is allowed (Settings › Bluetooth › this Mac), then try again.", "Pas de réponse du téléphone après \(Int(timeout)) s. Sur l'iPhone, vérifie que le Bluetooth est actif et que le Mac est autorisé (Réglages › Bluetooth › ce Mac), puis réessaie.")
                 )
             }
 

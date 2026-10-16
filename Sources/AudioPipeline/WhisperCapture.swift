@@ -316,11 +316,11 @@ public enum WhisperError: Error, LocalizedError {
 
     public var errorDescription: String? {
         switch self {
-        case .invalidResponse: return "Réponse Whisper invalide"
+        case .invalidResponse: return L("Invalid Whisper response", "Réponse Whisper invalide")
         case .serverError(let msg): return "Erreur serveur Whisper : \(msg)"
-        case .serverNotFound: return "whisper-server introuvable — installe-le avec `brew install whisper-cpp`"
-        case .modelNotFound(let path): return "Modèle Whisper introuvable : \(path)"
-        case .startTimeout: return "whisper-server n'a pas démarré à temps"
+        case .serverNotFound: return L("whisper-server not found — install it with `brew install whisper-cpp`", "whisper-server introuvable — installe-le avec `brew install whisper-cpp`")
+        case .modelNotFound(let path): return L("Whisper model not found: ", "Modèle Whisper introuvable : ") + path
+        case .startTimeout: return L("whisper-server didn't start in time", "whisper-server n'a pas démarré à temps")
         }
     }
 }

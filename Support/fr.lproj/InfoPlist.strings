@@ -1,0 +1,4 @@
+"NSBluetoothAlwaysUsageDescription" = "PhoneBT se connecte à ton téléphone en Bluetooth (profil mains-libres) pour passer et recevoir des appels.";
+"NSAudioCaptureUsageDescription" = "PhoneBT capte le son de l'appel joué par le Mac pour que l'agent IA entende l'interlocuteur.";
+"NSMicrophoneUsageDescription" = "PhoneBT écoute l'audio de l'appel pour que l'agent IA entende l'interlocuteur.";
+"NSSpeechRecognitionUsageDescription" = "PhoneBT transcrit localement ce que dit l'interlocuteur pour l'agent IA.";

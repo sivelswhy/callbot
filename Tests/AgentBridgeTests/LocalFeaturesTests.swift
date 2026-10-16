@@ -15,6 +15,7 @@
 import XCTest
 @testable import AgentBridge
 @testable import AudioPipeline
+import Shared
 
 final class LocalFeaturesTests: XCTestCase {
 
@@ -28,6 +29,7 @@ final class LocalFeaturesTests: XCTestCase {
 
     func testWaitMarker() {
         XCTAssertTrue(LocalAgent.isWaitMarker("ATTENTE"))
+        XCTAssertTrue(LocalAgent.isWaitMarker("WAIT"))
         XCTAssertTrue(LocalAgent.isWaitMarker(" attente. "))
         XCTAssertTrue(LocalAgent.isWaitMarker(""))
         XCTAssertFalse(LocalAgent.isWaitMarker("Bonjour, en attente de votre réponse"))
@@ -36,7 +38,9 @@ final class LocalFeaturesTests: XCTestCase {
     func testSystemPromptIncludesProfile() {
         let prompt = LocalAgent.makeSystemPrompt(autoAnswer: true, userProfile: "Numéro d'identité : 123456789", extraInstructions: nil)
         XCTAssertTrue(prompt.contains("123456789"))
-        XCTAssertTrue(prompt.contains("réponse automatique"))
+        XCTAssertTrue(prompt.contains("Auto-answer mode"))
+        XCTAssertFalse(prompt.contains("{USER_LANGUAGE}"))
+        XCTAssertTrue(prompt.contains(UILanguage.agent.englishName))
         XCTAssertFalse(LocalAgent.makeSystemPrompt(autoAnswer: false, userProfile: "  ", extraInstructions: nil).contains("Informations sur l'utilisateur"))
     }
 

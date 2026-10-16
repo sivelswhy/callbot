@@ -38,7 +38,8 @@ public struct PhoneSessionConfig: Sendable {
     public var audioMode: CallAudioMode
     public var ollamaURL: URL
     public var model: String
-    public var locale: String
+    /// Speech locale override (PHONEBT_LOCALE); nil = the agent language's locale
+    public var locale: String?
     public var voice: String?
     public var voiceRate: Float
     public var sttEngine: STTEngine
@@ -59,7 +60,7 @@ public struct PhoneSessionConfig: Sendable {
             audioMode: CallAudioMode(rawValue: env["PHONEBT_AUDIO"] ?? "") ?? .continuity,
             ollamaURL: URL(string: host)!,
             model: env["PHONEBT_MODEL"] ?? "qwen3:4b-instruct",
-            locale: env["PHONEBT_LOCALE"] ?? "fr-FR",
+            locale: env["PHONEBT_LOCALE"],
             voice: env["PHONEBT_VOICE"],
             voiceRate: env["PHONEBT_VOICE_RATE"].flatMap(Float.init) ?? 0.52,
             sttEngine: STTEngine(rawValue: env["PHONEBT_STT"] ?? "") ?? .whisper,
@@ -92,7 +93,7 @@ public struct SessionLogEntry: Sendable, Identifiable {
         case userSpoke
         /// DTMF keys sent
         case keys
-        /// French translation of the entry `of` (shown under it, not as its own row)
+        /// Translation (agent language) of the entry `of` (shown under it, not as its own row)
         case translation(of: UUID)
     }
 
@@ -100,7 +101,7 @@ public struct SessionLogEntry: Sendable, Identifiable {
     public let date = Date()
     public let kind: Kind
     public let text: String
-    /// French translation, when the text is in another language
+    /// Translation into the agent language, when the text is in another language
     public var translation: String?
     /// Clickable answers for a question from the agent
     public var options: [String] = []
@@ -154,6 +155,9 @@ public final class PhoneSession: @unchecked Sendable {
         continuity.releaseVirtualDefaults()
     }
 
+    /// Default speech locale: PHONEBT_LOCALE, else the agent language's
+    public var speechLocale: String { config.locale ?? UILanguage.agent.locale }
+
     public var state: HFPState? { withLock { device?.currentState } }
     public var isConnected: Bool { state?.connection == .connected }
     public var isAgentRunning: Bool { withLock { agent != nil } }
@@ -194,10 +198,10 @@ public final class PhoneSession: @unchecked Sendable {
             throw SessionError.hfpUnavailable(selected.name)
         }
 
-        log(.system, "Connexion à \(selected.name)… Si un code s'affiche sur l'iPhone et le Mac, vérifie qu'il est identique et accepte des deux côtés (une seule fois).")
+        log(.system, L("Connecting to \(selected.name)… If a code appears on the iPhone and the Mac, check that it matches and accept on both (only once).", "Connexion à \(selected.name)… Si un code s'affiche sur l'iPhone et le Mac, vérifie qu'il est identique et accepte des deux côtés (une seule fois)."))
         try await newDevice.connect()
         withLock { device = newDevice }
-        log(.system, "Connecté à \(selected.name)")
+        log(.system, L("Connected to \(selected.name)", "Connecté à \(selected.name)"))
         logger.info("AG features (phone): 0x\(String(newDevice.phoneFeatures, radix: 16))")
 
         let stream = newDevice.eventStream.makeStream()
@@ -226,7 +230,7 @@ public final class PhoneSession: @unchecked Sendable {
         if let d {
             d.disconnect()
             audioRouter.restorePreviousRouting()
-            log(.system, "Déconnecté")
+            log(.system, L("Disconnected", "Déconnecté"))
         }
         onStateChange?(nil)
     }
@@ -287,7 +291,7 @@ public final class PhoneSession: @unchecked Sendable {
             }
         )
 
-        log(.system, "Chargement du modèle \(config.model)…")
+        log(.system, L("Loading model \(config.model)…", "Chargement du modèle \(config.model)…"))
         await agent.warmUp()
 
         let listener = agent.startEventListener { [weak self] response in
@@ -298,7 +302,7 @@ public final class PhoneSession: @unchecked Sendable {
             self.agent = agent
             self.agentListenerTask = listener
         }
-        log(.system, "Agent IA actif\(autoAnswer ? " — décroche automatiquement" : "")")
+        log(.system, L("AI agent active", "Agent IA actif") + (autoAnswer ? L(" — answers automatically", " — décroche automatiquement") : ""))
     }
 
     public func stopAgent() {
@@ -308,27 +312,27 @@ public final class PhoneSession: @unchecked Sendable {
         }
         if let task {
             task.cancel()
-            log(.system, "Agent IA arrêté")
+            log(.system, L("AI agent stopped", "Agent IA arrêté"))
         }
     }
 
     /// Instruction or answer from the user to the agent
     public func sendToAgent(_ text: String) async {
         guard let agent = withLock({ self.agent }) else {
-            log(.error, "L'agent n'est pas actif")
+            log(.error, L("The agent isn't running", "L'agent n'est pas actif"))
             return
         }
         log(.user, text)
         do {
             logAgentResponse(try await agent.processMessage(text))
         } catch {
-            log(.error, "Erreur agent : \(error.localizedDescription)")
+            log(.error, L("Agent error: ", "Erreur agent : ") + error.localizedDescription)
         }
     }
 
     public func resetAgentConversation() async {
         await withLock({ self.agent })?.reset()
-        log(.system, "Conversation de l'agent réinitialisée")
+        log(.system, L("Agent conversation reset", "Conversation de l'agent réinitialisée"))
     }
 
     // MARK: Listening in
@@ -353,7 +357,7 @@ public final class PhoneSession: @unchecked Sendable {
             return whisperCapture
         }
         capture?.language = code
-        log(.system, code.map { "Langue de l'interlocuteur : \($0)" } ?? "Langue de l'interlocuteur : détection automatique")
+        log(.system, L("Caller's language: ", "Langue de l'interlocuteur : ") + (code.map { Self.languageName($0) } ?? L("automatic detection", "détection automatique")))
     }
 
     // MARK: User interventions in the call
@@ -368,21 +372,22 @@ public final class PhoneSession: @unchecked Sendable {
     /// translated into the call's language when that language is another one.
     public func say(_ text: String) {
         guard let player = withLock({ ttsPlayer }) else {
-            log(.error, "Audio de l'appel non connecté — impossible de parler")
+            log(.error, L("Call audio not connected — can't speak", "Audio de l'appel non connecté — impossible de parler"))
             return
         }
         let target = callTargetLanguage
-        let typedLanguage = TTSPlayer.detectLanguage(text) ?? "fr"
+        let userLanguage = UILanguage.agent.rawValue
+        let typedLanguage = TTSPlayer.detectLanguage(text) ?? userLanguage
         let agent = withLock { self.agent }
         Task {
             var spoken = text
             var original: String?
-            if let target, !target.hasPrefix("fr"), typedLanguage.hasPrefix("fr") {
+            if let target, !target.hasPrefix(userLanguage), typedLanguage.hasPrefix(userLanguage) {
                 do {
-                    spoken = try await self.translate(text, from: "fr", to: target, priority: .interactive)
+                    spoken = try await self.translate(text, from: userLanguage, to: target, priority: .interactive)
                     original = text
                 } catch {
-                    self.log(.error, "Traduction impossible (\(error.localizedDescription)) — dit tel quel")
+                    self.log(.error, L("Translation failed (\(error.localizedDescription)) — spoken as typed", "Traduction impossible (\(error.localizedDescription)) — dit tel quel"))
                 }
             }
             var entry = SessionLogEntry(kind: .userSpoke, text: spoken)
@@ -392,16 +397,16 @@ public final class PhoneSession: @unchecked Sendable {
             do {
                 try await player.speak(spoken, language: original == nil ? nil : target)
             } catch {
-                self.log(.error, "Synthèse vocale échouée : \(error.localizedDescription)")
+                self.log(.error, L("Speech synthesis failed: ", "Synthèse vocale échouée : ") + error.localizedDescription)
             }
-            await agent?.addNote("L'utilisateur a dit lui-même à l'interlocuteur : \"\(spoken)\"\(original.map { " (en français : \($0))" } ?? "")")
+            await agent?.addNote("The user said this to the caller themselves: \"\(spoken)\"\(original.map { " (typed as: \($0))" } ?? "")")
         }
     }
 
     /// Press phone keys (DTMF), e.g. "1" or "123456789#"
     public func pressKeys(_ raw: String) {
         guard let device = withLock({ self.device }) else {
-            log(.error, "Téléphone non connecté")
+            log(.error, L("Phone not connected", "Téléphone non connecté"))
             return
         }
         let digits = ToolExecutor.dtmfDigits(raw)
@@ -411,26 +416,26 @@ public final class PhoneSession: @unchecked Sendable {
             for (i, d) in digits.enumerated() {
                 if i > 0 { try? await Task.sleep(nanoseconds: 350_000_000) }
                 do { try device.sendDTMF(String(d)) } catch {
-                    self.log(.error, "Touche \(d) : \(error.localizedDescription)")
+                    self.log(.error, L("Key \(d): ", "Touche \(d) : ") + error.localizedDescription)
                     return
                 }
             }
         }
         if let agent = withLock({ self.agent }) {
-            Task { await agent.addNote("L'utilisateur a tapé lui-même les touches \(String(digits))") }
+            Task { await agent.addNote("The user pressed the keys \(String(digits)) themselves") }
         }
     }
 
     public func dial(_ number: String) {
-        do { try placeCall(number) } catch { log(.error, "Appel impossible : \(error.localizedDescription)") }
+        do { try placeCall(number) } catch { log(.error, L("Can't call: ", "Appel impossible : ") + error.localizedDescription) }
     }
 
     public func answer() {
-        do { try acceptCall() } catch { log(.error, "Impossible de décrocher : \(error.localizedDescription)") }
+        do { try acceptCall() } catch { log(.error, L("Can't answer: ", "Impossible de décrocher : ") + error.localizedDescription) }
     }
 
     public func hangup() {
-        do { try endCall() } catch { log(.error, "Impossible de raccrocher : \(error.localizedDescription)") }
+        do { try endCall() } catch { log(.error, L("Can't hang up: ", "Impossible de raccrocher : ") + error.localizedDescription) }
     }
 
     // MARK: Diagnostics
@@ -448,24 +453,24 @@ public final class PhoneSession: @unchecked Sendable {
             label: "Bluetooth",
             ok: BluetoothManager.isAuthorized,
             detail: BluetoothManager.isAuthorized
-                ? "Autorisé"
-                : "Accès \(BluetoothManager.authorizationStatus) — Réglages Système › Confidentialité et sécurité › Bluetooth › active PhoneBT"
+                ? L("Allowed", "Autorisé")
+                : L("Access \(BluetoothManager.authorizationStatus) — System Settings › Privacy & Security › Bluetooth › turn on PhoneBT", "Accès \(BluetoothManager.authorizationStatus) — Réglages Système › Confidentialité et sécurité › Bluetooth › active PhoneBT")
         ))
 
         if config.audioMode == .continuity {
             let devices = continuity.findDevices()
             results.append(.init(
-                label: "Audio des appels",
+                label: L("Call audio", "Audio des appels"),
                 ok: devices != nil,
-                detail: devices.map { "Continuité via \($0.fromCall.name) / \($0.toCall.name)" }
-                    ?? "BlackHole manquant : brew install --cask blackhole-2ch blackhole-16ch, puis redémarre le Mac"
+                detail: devices.map { L("Continuity via \($0.fromCall.name) / \($0.toCall.name)", "Continuité via \($0.fromCall.name) / \($0.toCall.name)") }
+                    ?? L("BlackHole missing: brew install --cask blackhole-2ch blackhole-16ch, then restart the Mac", "BlackHole manquant : brew install --cask blackhole-2ch blackhole-16ch, puis redémarre le Mac")
             ))
             let ax = ContinuityCalls.isAccessibilityTrusted
             results.append(.init(
-                label: "Accessibilité",
+                label: L("Accessibility", "Accessibilité"),
                 ok: ax,
-                detail: ax ? "Autorisé (composer / décrocher automatiquement)"
-                    : "Réglages Système › Confidentialité et sécurité › Accessibilité › active PhoneBT"
+                detail: ax ? L("Allowed (dial / answer automatically)", "Autorisé (composer / décrocher automatiquement)")
+                    : L("System Settings › Privacy & Security › Accessibility › turn on PhoneBT", "Réglages Système › Confidentialité et sécurité › Accessibilité › active PhoneBT")
             ))
         }
 
@@ -484,27 +489,27 @@ public final class PhoneSession: @unchecked Sendable {
             results.append(.init(
                 label: "Transcription",
                 ok: modelOK && binOK,
-                detail: !binOK ? "whisper-server manquant : brew install whisper-cpp"
-                    : !modelOK ? "Modèle manquant : \(config.whisperModelPath)"
-                    : "Whisper local, détection de langue auto"
+                detail: !binOK ? L("whisper-server missing: brew install whisper-cpp", "whisper-server manquant : brew install whisper-cpp")
+                    : !modelOK ? L("Model missing: ", "Modèle manquant : ") + config.whisperModelPath
+                    : L("Local Whisper, automatic language detection", "Whisper local, détection de langue auto")
             ))
         case .apple:
-            let ok = AudioCapture.supportsOnDevice(locale: Locale(identifier: config.locale))
+            let ok = AudioCapture.supportsOnDevice(locale: Locale(identifier: speechLocale))
             results.append(.init(
                 label: "Transcription",
                 ok: ok,
-                detail: ok ? "Apple hors-ligne (\(config.locale))" : "Active la Dictée \(config.locale) dans Réglages Système › Clavier"
+                detail: ok ? L("Apple offline (\(speechLocale))", "Apple hors-ligne (\(speechLocale))") : L("Turn on \(speechLocale) Dictation in System Settings › Keyboard", "Active la Dictée \(speechLocale) dans Réglages Système › Clavier")
             ))
         }
 
         do {
-            let code = String(config.locale.prefix(2))
+            let code = String(speechLocale.prefix(2))
             let voices = TTSPlayer.availableVoices(language: code)
             results.append(.init(
-                label: "Voix",
+                label: L("Voice", "Voix"),
                 ok: !voices.isEmpty,
                 detail: voices.first.map { "\($0.name)" }
-                    ?? "Aucune voix \(code) : Réglages Système › Accessibilité › Contenu énoncé › Voix du système"
+                    ?? L("No \(code) voice: System Settings › Accessibility › Spoken Content › System Voice", "Aucune voix \(code) : Réglages Système › Accessibilité › Contenu énoncé › Voix du système")
             ))
         }
         return results
@@ -518,9 +523,9 @@ public final class PhoneSession: @unchecked Sendable {
 
         switch event {
         case .incomingCall(let number):
-            log(.system, "📞 Appel entrant de \(number ?? "numéro inconnu")")
+            log(.system, L("📞 Incoming call from ", "📞 Appel entrant de ") + (number ?? L("unknown number", "numéro inconnu")))
         case .callAlerting:
-            log(.system, "Ça sonne…")
+            log(.system, L("Ringing…", "Ça sonne…"))
             if config.audioMode == .bluetooth {
                 requestCallAudio()
             } else {
@@ -529,7 +534,7 @@ public final class PhoneSession: @unchecked Sendable {
                 startContinuityAudio()
             }
         case .callActive:
-            log(.system, "Appel en cours")
+            log(.system, L("Call in progress", "Appel en cours"))
             if config.audioMode == .bluetooth {
                 requestCallAudio()
             } else {
@@ -537,7 +542,7 @@ public final class PhoneSession: @unchecked Sendable {
             }
         case .callEnded:
             withLock { audioAttempts = 0 }
-            log(.system, "Appel terminé")
+            log(.system, L("Call ended", "Appel terminé"))
             if config.audioMode == .continuity {
                 stopAudioPipeline()
                 continuity.restoreSystemAudio()
@@ -551,15 +556,15 @@ public final class PhoneSession: @unchecked Sendable {
                     self?.requestCallAudio()
                 }
             } else {
-                log(.error, "Le Mac n'a pas pu ouvrir le canal audio de l'appel (code \(status)). Le son reste sur l'iPhone.")
+                log(.error, L("The Mac couldn't open the call's audio channel (code \(status)). The sound stays on the iPhone.", "Le Mac n'a pas pu ouvrir le canal audio de l'appel (code \(status)). Le son reste sur l'iPhone."))
             }
         case .error(let message):
             log(.error, message)
         case .scoConnected:
-            log(.system, "🔊 Audio connecté")
+            log(.system, L("🔊 Audio connected", "🔊 Audio connecté"))
             if config.audioMode == .bluetooth { startAudioPipeline() }
         case .scoDisconnected:
-            log(.system, "🔇 Audio déconnecté")
+            log(.system, L("🔇 Audio disconnected", "🔇 Audio déconnecté"))
             stopAudioPipeline()
             audioRouter.restorePreviousRouting()
         case .callerSpeech(let text, let language):
@@ -567,7 +572,7 @@ public final class PhoneSession: @unchecked Sendable {
             let entry = log(.caller(language: language), text)
             translateIfNeeded(entry, language: language)
         case .disconnected:
-            log(.error, "Téléphone déconnecté")
+            log(.error, L("Phone disconnected", "Téléphone déconnecté"))
             stopAgent()
             stopAudioPipeline()
             continuity.restoreSystemAudio()
@@ -595,18 +600,18 @@ public final class PhoneSession: @unchecked Sendable {
                 try device.connectAudio()
             }
         } catch {
-            log(.error, "Demande audio échouée : \(error.localizedDescription)")
+            log(.error, L("Audio request failed: ", "Demande audio échouée : ") + error.localizedDescription)
         }
     }
 
     private func prepareWhisper() async {
         do {
             if !(await whisperServer.isRunning()) {
-                log(.system, "Démarrage de la transcription Whisper…")
+                log(.system, L("Starting Whisper transcription…", "Démarrage de la transcription Whisper…"))
             }
             try await whisperServer.ensureRunning()
         } catch {
-            log(.error, "Whisper : \(error.localizedDescription)")
+            log(.error, "Whisper: \(error.localizedDescription)")
         }
     }
 
@@ -622,7 +627,7 @@ public final class PhoneSession: @unchecked Sendable {
             } else {
                 let all = AudioDeviceManager().getAllDevices().map { "\($0.name) (bt=\($0.isBluetooth), in=\($0.hasInput), out=\($0.hasOutput))" }
                 logger.error("No SCO device. Audio devices: \(all.joined(separator: "; "))")
-                log(.error, "Aucun périphérique audio Bluetooth (SCO) trouvé")
+                log(.error, L("No Bluetooth (SCO) audio device found", "Aucun périphérique audio Bluetooth (SCO) trouvé"))
             }
             return
         }
@@ -639,7 +644,7 @@ public final class PhoneSession: @unchecked Sendable {
     private func startContinuityAudio() {
         guard let device = withLock({ self.device }), withLock({ audioSession }) == nil else { return }
         guard let devices = continuity.findDevices() else {
-            log(.error, "BlackHole introuvable — installe-le (brew install --cask blackhole-2ch blackhole-16ch) puis redémarre le Mac")
+            log(.error, L("BlackHole not found — install it (brew install --cask blackhole-2ch blackhole-16ch), then restart the Mac", "BlackHole introuvable — installe-le (brew install --cask blackhole-2ch blackhole-16ch) puis redémarre le Mac"))
             return
         }
         // In case the call was answered manually on the Mac
@@ -682,12 +687,12 @@ public final class PhoneSession: @unchecked Sendable {
                 try session.start()
             }
         } catch {
-            log(.error, "Démarrage audio échoué : \(error.localizedDescription)")
+            log(.error, L("Audio start failed: ", "Démarrage audio échoué : ") + error.localizedDescription)
             return false
         }
 
         let player = TTSPlayer(
-            sessionManager: session, language: config.locale,
+            sessionManager: session, language: speechLocale,
             voiceIdentifier: config.voice, rate: config.voiceRate
         )
 
@@ -711,10 +716,10 @@ public final class PhoneSession: @unchecked Sendable {
             player.onPlayback = { [weak m] buffer in m?.playVoice(buffer) }
             newMonitor = m
         } catch {
-            log(.error, "Écoute de l'appel sur le Mac indisponible : \(error.localizedDescription)")
+            log(.error, L("Listening to the call on the Mac is unavailable: ", "Écoute de l'appel sur le Mac indisponible : ") + error.localizedDescription)
         }
 
-        watchInputLevel(session: session, deviceName: session.capturesSystemAudio ? "audio du système" : input.name)
+        watchInputLevel(session: session, deviceName: session.capturesSystemAudio ? L("system audio", "audio du système") : input.name)
 
         withLock {
             audioSession = session
@@ -754,9 +759,9 @@ public final class PhoneSession: @unchecked Sendable {
                 if peak > 0.001 { heardSomething = true }
                 if tick == 4 && !heardSomething {
                     if session.capturesSystemAudio {
-                        self.log(.error, "L'agent n'entend pas l'appel : autorise PhoneBT dans Réglages Système › Confidentialité et sécurité › Enregistrement de l'écran et de l'audio système (section « Audio système uniquement »), puis relance PhoneBT. Si tu n'entends pas non plus l'appel, son audio est resté sur l'iPhone.")
+                        self.log(.error, L("The agent can't hear the call: allow PhoneBT in System Settings › Privacy & Security › Screen & System Audio Recording (\"System Audio Recording Only\" section), then relaunch PhoneBT. If you can't hear the call either, its audio stayed on the iPhone.", "L'agent n'entend pas l'appel : autorise PhoneBT dans Réglages Système › Confidentialité et sécurité › Enregistrement de l'écran et de l'audio système (section « Audio système uniquement »), puis relance PhoneBT. Si tu n'entends pas non plus l'appel, son audio est resté sur l'iPhone."))
                     } else {
-                        self.log(.error, "Aucun son de l'appel n'arrive sur le Mac (\(deviceName) est silencieux). Le son de l'appel est probablement resté sur l'iPhone : touche « Audio » dans l'écran d'appel de l'iPhone et choisis le Mac, ou vérifie que la sortie de FaceTime est « \(deviceName) ».")
+                        self.log(.error, L("No call audio reaches the Mac (\(deviceName) is silent). The call audio probably stayed on the iPhone: tap \"Audio\" on the iPhone's call screen and choose the Mac, or check that FaceTime's output is \"\(deviceName)\".", "Aucun son de l'appel n'arrive sur le Mac (\(deviceName) est silencieux). Le son de l'appel est probablement resté sur l'iPhone : touche « Audio » dans l'écran d'appel de l'iPhone et choisis le Mac, ou vérifie que la sortie de FaceTime est « \(deviceName) »."))
                     }
                 }
             }
@@ -781,14 +786,14 @@ public final class PhoneSession: @unchecked Sendable {
                     withLock { whisperCapture = capture }
                     return
                 } catch {
-                    log(.error, "Capture Whisper échouée : \(error.localizedDescription)")
+                    log(.error, L("Whisper capture failed: ", "Capture Whisper échouée : ") + error.localizedDescription)
                 }
             }
-            log(.error, "Whisper indisponible — transcription Apple (\(config.locale) uniquement)")
+            log(.error, L("Whisper unavailable — Apple transcription (\(speechLocale) only)", "Whisper indisponible — transcription Apple (\(speechLocale) uniquement)"))
         }
 
-        let capture = AudioCapture(sessionManager: session, locale: Locale(identifier: config.locale))
-        let language = String(config.locale.prefix(2))
+        let capture = AudioCapture(sessionManager: session, locale: Locale(identifier: speechLocale))
+        let language = String(speechLocale.prefix(2))
         capture.onTranscription = { text in
             device.eventStream.emit(.callerSpeech(text, language: language))
         }
@@ -796,7 +801,7 @@ public final class PhoneSession: @unchecked Sendable {
             try capture.start()
             withLock { appleCapture = capture }
         } catch {
-            log(.error, "Capture audio échouée : \(error.localizedDescription)")
+            log(.error, L("Audio capture failed: ", "Capture audio échouée : ") + error.localizedDescription)
         }
     }
 
@@ -841,7 +846,7 @@ public final class PhoneSession: @unchecked Sendable {
     private func translate(_ text: String, from source: String, to target: String, priority: OllamaPriority = .background) async throws -> String {
         let client = OllamaClient(baseURL: config.ollamaURL, model: config.model)
         let reply = try await client.chat(messages: [
-            ChatMessage(role: "system", content: "Tu es un traducteur pour une conversation téléphonique. Traduis le texte de l'utilisateur de la langue « \(Self.languageName(source)) » vers la langue « \(Self.languageName(target)) », dans un style oral naturel et poli. Garde tels quels les noms propres, numéros et marques. Réponds uniquement par la traduction, sans guillemets ni commentaire."),
+            ChatMessage(role: "system", content: "You translate a phone conversation. Translate the user's text from \(Self.languageName(source, in: .en)) into \(Self.languageName(target, in: .en)), in a natural, polite spoken style. Keep proper names, numbers and brands as they are. Reply with the translation only, without quotes or comments."),
             ChatMessage(role: "user", content: text),
         ], tools: [], priority: priority)
         let translation = OllamaClient.stripThinking(reply.content).trimmingCharacters(in: .whitespacesAndNewlines)
@@ -849,19 +854,15 @@ public final class PhoneSession: @unchecked Sendable {
         return translation
     }
 
-    public static func languageName(_ code: String) -> String {
-        switch String(code.prefix(2)) {
-        case "fr": return "français"
-        case "he": return "hébreu"
-        case "en": return "anglais"
-        case "ar": return "arabe"
-        case "ru": return "russe"
-        case "es": return "espagnol"
-        case "de": return "allemand"
-        case "it": return "italien"
-        case "pt": return "portugais"
-        default: return code
-        }
+    /// Name of a language (ISO 639-1 code) in the app language, or in `language`
+    public static func languageName(_ code: String, in language: UILanguage = .current) -> String {
+        let names: [String: (en: String, fr: String)] = [
+            "ar": ("Arabic", "arabe"), "de": ("German", "allemand"), "en": ("English", "anglais"),
+            "es": ("Spanish", "espagnol"), "fr": ("French", "français"), "he": ("Hebrew", "hébreu"),
+            "it": ("Italian", "italien"), "pt": ("Portuguese", "portugais"), "ru": ("Russian", "russe"),
+        ]
+        guard let name = names[String(code.prefix(2))] else { return code }
+        return language == .fr ? name.fr : name.en
     }
 
     @discardableResult
@@ -874,11 +875,12 @@ public final class PhoneSession: @unchecked Sendable {
 
     /// Translate into French what is said in the call in another language (shown under it)
     private func translateIfNeeded(_ entry: SessionLogEntry, language: String?) {
-        guard let language, !language.hasPrefix("fr"),
+        let target = UILanguage.agent.rawValue
+        guard let language, !language.hasPrefix(target),
               entry.text.count > 2 else { return }
         Task { [weak self] in
             do {
-                guard let translation = try await self?.translate(entry.text, from: language, to: "fr"),
+                guard let translation = try await self?.translate(entry.text, from: language, to: target),
                       let self else { return }
                 self.logger.info("[translation] \(translation)")
                 self.onLog?(SessionLogEntry(kind: .translation(of: entry.id), text: translation))
@@ -906,15 +908,15 @@ public enum SessionError: Error, LocalizedError {
 
     public var errorDescription: String? {
         switch self {
-        case .notConnected: return "Aucun téléphone connecté"
-        case .deviceNotFound(let address): return "Appareil introuvable (\(address))"
-        case .hfpUnavailable(let name): return "\(name) ne propose pas le profil mains-libres (HFP)"
-        case .invalidNumber(let n): return "Numéro invalide : \(n)"
-        case .translationFailed: return "traduction vide"
+        case .notConnected: return L("No phone connected", "Aucun téléphone connecté")
+        case .deviceNotFound(let address): return L("Device not found (\(address))", "Appareil introuvable (\(address))")
+        case .hfpUnavailable(let name): return L("\(name) doesn't offer the hands-free profile (HFP)", "\(name) ne propose pas le profil mains-libres (HFP)")
+        case .invalidNumber(let n): return L("Invalid number: ", "Numéro invalide : ") + n
+        case .translationFailed: return L("empty translation", "traduction vide")
         case .blackHoleMissing:
-            return "BlackHole n'est pas installé : brew install --cask blackhole-2ch blackhole-16ch, puis redémarre le Mac"
+            return L("BlackHole isn't installed: brew install --cask blackhole-2ch blackhole-16ch, then restart the Mac", "BlackHole n'est pas installé : brew install --cask blackhole-2ch blackhole-16ch, puis redémarre le Mac")
         case .bluetoothNotAuthorized(let status):
-            return "macOS bloque l'accès Bluetooth de PhoneBT (\(status)). Accepte la demande d'autorisation, ou active PhoneBT dans Réglages Système › Confidentialité et sécurité › Bluetooth, puis réessaie."
+            return L("macOS blocks PhoneBT's Bluetooth access (\(status)). Accept the permission request, or turn on PhoneBT in System Settings › Privacy & Security › Bluetooth, then try again.", "macOS bloque l'accès Bluetooth de PhoneBT (\(status)). Accepte la demande d'autorisation, ou active PhoneBT dans Réglages Système › Confidentialité et sécurité › Bluetooth, puis réessaie.")
         }
     }
 }
@@ -931,21 +933,21 @@ extension PhoneSession: CallActions {
         switch config.audioMode {
         case .bluetooth:
             try device.dial(number: sanitized)
-            log(.system, "Appel de \(sanitized)…")
+            log(.system, L("Calling \(sanitized)…", "Appel de \(sanitized)…"))
 
         case .continuity:
             guard let devices = continuity.findDevices() else { throw SessionError.blackHoleMissing }
             // Route FaceTime's audio before the call starts
             continuity.routeSystemAudio(to: devices)
             device.eventStream.emit(.callDialing(number: sanitized))
-            log(.system, "Appel de \(sanitized) via l'iPhone (Continuité)…")
+            log(.system, L("Calling \(sanitized) through the iPhone (Continuity)…", "Appel de \(sanitized) via l'iPhone (Continuité)…"))
             Task {
                 let started = { [weak device] () -> Bool in
                     guard let call = device?.currentState.call else { return false }
                     return call == .alerting || call == .active
                 }
                 if !(await continuity.dial(sanitized, until: started)) && !started() {
-                    log(.error, "Je n'ai pas pu cliquer « Appeler » — clique-le dans la fenêtre FaceTime (et autorise PhoneBT dans Accessibilité)")
+                    log(.error, L("I couldn't click \"Call\" — click it in the FaceTime window (and allow PhoneBT in Accessibility)", "Je n'ai pas pu cliquer « Appeler » — clique-le dans la fenêtre FaceTime (et autorise PhoneBT dans Accessibilité)"))
                 }
                 // The call never went through: give the Mac its audio devices back
                 try? await Task.sleep(nanoseconds: 60_000_000_000)
@@ -962,16 +964,16 @@ extension PhoneSession: CallActions {
         switch config.audioMode {
         case .bluetooth:
             try device.acceptCall()
-            log(.system, "Appel décroché")
+            log(.system, L("Call answered", "Appel décroché"))
 
         case .continuity:
             guard let devices = continuity.findDevices() else { throw SessionError.blackHoleMissing }
             continuity.routeSystemAudio(to: devices)
             Task {
                 if await continuity.answer() {
-                    log(.system, "Appel décroché sur le Mac")
+                    log(.system, L("Call answered on the Mac", "Appel décroché sur le Mac"))
                 } else {
-                    log(.error, "Je n'ai pas trouvé le bouton « Accepter » — clique-le sur la notification d'appel du Mac")
+                    log(.error, L("I couldn't find the \"Accept\" button — click it on the Mac's call notification", "Je n'ai pas trouvé le bouton « Accepter » — clique-le sur la notification d'appel du Mac"))
                 }
             }
         }

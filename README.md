@@ -1,73 +1,78 @@
-# PhoneBT — agent téléphonique IA local pour macOS
-
-> ⚠️ **Bêta.** Le projet est en développement actif : attends-toi à des bugs, à des
-> changements de comportement et à des réglages qui bougent d'une version à l'autre.
-> Vérifie toujours ce que l'agent dit et fait pendant un appel.
-
-PhoneBT transforme un Mac relié à un iPhone en assistant téléphonique : un agent IA passe
-et reçoit des appels avec la ligne cellulaire du téléphone, écoute l'interlocuteur, lui
-répond à voix haute, navigue dans les serveurs vocaux (« tapez 1… ») et te demande ton avis
-quand il lui manque une information. Tout tourne **en local** : LLM via Ollama,
-transcription via whisper.cpp, synthèse vocale de macOS. Aucune clé d'API n'est nécessaire.
-
-Ce projet est basé sur [PhoneBT d'ICOA](https://github.com/icoainc/phonebt), un client
-Bluetooth mains-libres (HFP) pour macOS, dont il reprend le cœur Bluetooth.
+# PhoneBT — local AI phone agent for macOS
 
 [![Build](https://github.com/sivelswhy/callbot/actions/workflows/build.yml/badge.svg)](https://github.com/sivelswhy/callbot/actions/workflows/build.yml)
 
-## Fonctionnement
+> ⚠️ **Beta.** This project is under active development: expect bugs, behavior changes and
+> settings that move between versions. Always keep an eye on what the agent says and does
+> during a call.
+
+PhoneBT turns a Mac paired with an iPhone into a phone assistant: an AI agent places and
+receives calls over the phone's cellular line, listens to the other party, answers out loud,
+navigates voice menus ("press 1…") and asks for your input when it's missing information.
+Everything runs **locally**: LLM through Ollama, transcription through whisper.cpp, speech
+synthesis from macOS. No API key needed.
+
+This project is based on [PhoneBT by ICOA](https://github.com/icoainc/phonebt), a Bluetooth
+hands-free (HFP) client for macOS, whose Bluetooth core it reuses.
+
+## How it works
 
 ```
-iPhone ──(Continuité « Appels sur le Mac »)──► FaceTime sur le Mac
-                                                  │
-     son de l'appel ──► capture audio système ──► Whisper (transcription, langue détectée)
-                                                  │
-                                                  ▼
-                                    LLM local (Ollama) + outils
-                                                  │
-     voix de l'agent ◄── BlackHole 16ch ◄── synthèse vocale macOS
+iPhone ──(Continuity "Calls on Other Devices")──► FaceTime on the Mac
+                                                     │
+     call audio ──► system audio capture ──► Whisper (transcription, detected language)
+                                                     │
+                                                     ▼
+                                       local LLM (Ollama) + tools
+                                                     │
+     agent's voice ◄── BlackHole 16ch ◄── macOS speech synthesis
 ```
 
-- **Contrôle de l'appel** : le Mac est jumelé à l'iPhone en Bluetooth (profil mains-libres)
-  pour suivre l'état de l'appel, raccrocher et envoyer des touches DTMF.
-- **Audio** : l'appel passe par la fonction Continuité de macOS. L'agent entend l'appel grâce
-  à une capture de l'audio système (macOS 14.2+) et parle dans l'appel via le périphérique
-  virtuel BlackHole 16ch, utilisé comme micro par FaceTime.
-- **Écoute** : tu entends l'appel (interlocuteur + agent) sur les haut-parleurs ou le casque
-  du Mac, et tu peux intervenir à tout moment : dire une phrase, taper des touches, donner une
-  instruction à l'agent.
+- **Call control**: the Mac is paired with the iPhone over Bluetooth (hands-free profile) to
+  follow the call state, hang up and send DTMF keys.
+- **Audio**: the call goes through macOS Continuity. The agent hears the call through a
+  system audio capture (macOS 14.2+) and speaks into the call through the BlackHole 16ch
+  virtual device, which FaceTime uses as its microphone.
+- **Listening in**: you hear the call (other party + agent) on the Mac's speakers or
+  headphones, and you can step in at any time: say a sentence, press keys, give the agent an
+  instruction.
 
-## Langues
+## Languages
 
-L'agent répond dans la langue de l'interlocuteur. Whisper détecte automatiquement la langue
-(français, anglais, espagnol, arabe, hébreu, russe, allemand…), ou tu peux la fixer dans
-l'app pour une transcription plus fiable. Quand l'appel n'est pas en français, chaque phrase
-est traduite dans l'interface, et le texte que tu tapes en français est traduit avant d'être
-prononcé. L'interface de l'app est en français.
+- **App language**: English or French, in the app (bottom of the sidebar) or with
+  `PHONEBT_UI_LANG=en|fr`. Defaults to the system language.
+- **Agent language**: English or French, in the *AI agent* section or with
+  `PHONEBT_AGENT_LANG=en|fr`. It's the language the agent uses with you (reports, questions),
+  the language the call is translated into in the app, and the language it greets callers in.
+- **Call language**: the agent answers in the other party's language, whatever it is. Whisper
+  detects it automatically (English, French, Spanish, Arabic, Hebrew, Russian, German…), or
+  you can set it in the app for more reliable transcription. When the call isn't in the agent
+  language, each sentence is translated in the app, and what you type is translated before
+  being spoken.
 
-## Prérequis
+## Requirements
 
-- macOS 14.2 ou plus récent, Mac Apple Silicon recommandé (16 Go de RAM conseillés)
-- Un iPhone avec **Appels sur d'autres appareils** activé (Réglages › Téléphone), connecté
-  au même compte Apple, et jumelé au Mac en Bluetooth
-- [Ollama](https://ollama.com) et un modèle qui gère les outils :
+- macOS 14.2 or later, Apple Silicon Mac recommended (16 GB of RAM advised)
+- An iPhone with **Calls on Other Devices** turned on (Settings › Phone), signed in to the
+  same Apple Account and paired with the Mac over Bluetooth
+- [Ollama](https://ollama.com) and a model that supports tools:
   ```bash
   ollama pull qwen3:4b-instruct
   ```
-- [whisper.cpp](https://github.com/ggml-org/whisper.cpp) et le modèle `large-v3-turbo` :
+- [whisper.cpp](https://github.com/ggml-org/whisper.cpp) and the `large-v3-turbo` model:
   ```bash
   brew install whisper-cpp
   mkdir -p ~/.phonebt/models
   curl -L -o ~/.phonebt/models/ggml-large-v3-turbo-q5_0.bin \
     https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo-q5_0.bin
   ```
-- [BlackHole](https://github.com/ExistentialAudio/BlackHole) 2ch et 16ch, puis redémarrer le Mac :
+- [BlackHole](https://github.com/ExistentialAudio/BlackHole) 2ch and 16ch, then restart the Mac:
   ```bash
   brew install --cask blackhole-2ch blackhole-16ch
   ```
-- Une voix de synthèse pour chaque langue utilisée : Réglages Système › Accessibilité ›
-  Contenu énoncé › Voix du système. Les voix « améliorées » ou « premium » sonnent bien
-  mieux que les voix compactes installées par défaut.
+- A speech voice for each language you use: System Settings › Accessibility › Spoken
+  Content › System Voice. "Enhanced" or "Premium" voices sound much better than the compact
+  voices installed by default.
 
 ## Installation
 
@@ -78,79 +83,84 @@ cd callbot
 open build/PhoneBT.app
 ```
 
-Au premier lancement, autorise PhoneBT dans Réglages Système › Confidentialité et sécurité :
+A prebuilt `PhoneBT.app` is also attached to each [GitHub Actions run](https://github.com/sivelswhy/callbot/actions)
+(unsigned: right-click › Open the first time).
 
-| Autorisation | Pourquoi |
+On first launch, allow PhoneBT in System Settings › Privacy & Security:
+
+| Permission | Why |
 |---|---|
-| Bluetooth | Contrôle de l'appel avec l'iPhone |
-| Micro | Capture audio de l'appel |
-| Enregistrement de l'écran et de l'audio système (« Audio système uniquement ») | L'agent entend l'interlocuteur |
-| Accessibilité | Cliquer « Appeler » / « Accepter » dans FaceTime automatiquement |
+| Bluetooth | Call control with the iPhone |
+| Microphone | Call audio capture |
+| Screen & System Audio Recording ("System Audio Recording Only") | The agent hears the other party |
+| Accessibility | Click "Call" / "Accept" in FaceTime automatically |
 
-Au démarrage, l'app vérifie chaque élément (Ollama, Whisper, BlackHole, voix, autorisations)
-et indique quoi corriger ; le bouton **Revérifier** relance le contrôle.
+At launch, the app checks every component (Ollama, Whisper, BlackHole, voice, permissions)
+and tells you what to fix; the **Check again** button runs the checks again.
 
-> L'app est signée localement (ad hoc). Après une recompilation, macOS peut redemander
-> certaines autorisations.
+> The app is signed locally (ad hoc). After a rebuild, macOS may ask for some permissions
+> again.
 
-## Utilisation
+## Usage
 
-1. Ouvre l'app, choisis ton iPhone et connecte-toi.
-2. Remplis ton **profil** (nom, numéros client…) : l'agent n'utilise que ces informations,
-   il n'invente jamais un numéro ni un identifiant.
-3. Active l'**agent**, puis donne-lui une mission (« Appelle mon opérateur pour demander le
-   détail de ma dernière facture ») ou laisse-le décrocher les appels entrants.
-4. Suis l'appel en direct : transcription, traduction, questions de l'agent avec réponses
-   cliquables.
+1. Open the app, choose your iPhone and connect.
+2. Fill in **My info** (name, customer numbers…): the agent only uses this information and
+   never makes up a number or an identifier.
+3. Turn on the **agent**, then give it a mission ("Call my mobile carrier and ask for the
+   details of my last bill") or let it answer incoming calls.
+4. Follow the call live: transcription, translation, questions from the agent with clickable
+   answers.
 
-Une interface en ligne de commande est aussi disponible : `swift run PhoneBT` (`help` pour la
-liste des commandes).
+A command-line interface is also available: `swift run PhoneBT` (`help` lists the commands).
 
 ## Configuration
 
-Variables d'environnement facultatives :
+Optional environment variables:
 
-| Variable | Défaut | Rôle |
+| Variable | Default | Purpose |
 |---|---|---|
-| `PHONEBT_MODEL` | `qwen3:4b-instruct` | Modèle Ollama (`qwen3:8b` : plus fiable, deux fois plus lent) |
-| `OLLAMA_HOST` | `http://localhost:11434` | Serveur Ollama |
-| `PHONEBT_LOCALE` | `fr-FR` | Langue principale (voix par défaut) |
-| `PHONEBT_VOICE` | meilleure voix installée | Voix de synthèse (nom ou identifiant) |
-| `PHONEBT_VOICE_RATE` | `0.52` | Débit de la voix (0 à 1) |
-| `PHONEBT_STT` | `whisper` | `whisper` (multilingue) ou `apple` (une seule langue) |
-| `PHONEBT_WHISPER_MODEL` | `~/.phonebt/models/ggml-large-v3-turbo-q5_0.bin` | Modèle Whisper |
-| `PHONEBT_WHISPER_LANG` | `auto` | Langue de l'interlocuteur, ou détection automatique |
-| `PHONEBT_AUDIO` | `continuity` | `continuity` ou `bluetooth` (audio SCO, refusé par les macOS récents) |
-| `PHONEBT_PROFILE` | `~/.phonebt/profile.md` | Fichier du profil utilisateur |
-| `PHONEBT_PROMPT_FILE` | — | Instructions supplémentaires pour l'agent |
+| `PHONEBT_UI_LANG` | system language | App language: `en` or `fr` |
+| `PHONEBT_AGENT_LANG` | app language | Agent language: `en` or `fr` |
+| `PHONEBT_MODEL` | `qwen3:4b-instruct` | Ollama model (`qwen3:8b`: more reliable, twice as slow) |
+| `OLLAMA_HOST` | `http://localhost:11434` | Ollama server |
+| `PHONEBT_LOCALE` | agent language | Default speech locale (e.g. `en-GB`) |
+| `PHONEBT_VOICE` | best installed voice | Speech voice (name or identifier) |
+| `PHONEBT_VOICE_RATE` | `0.52` | Speech rate (0 to 1) |
+| `PHONEBT_STT` | `whisper` | `whisper` (multilingual) or `apple` (single language) |
+| `PHONEBT_WHISPER_MODEL` | `~/.phonebt/models/ggml-large-v3-turbo-q5_0.bin` | Whisper model |
+| `PHONEBT_WHISPER_LANG` | `auto` | Other party's language, or automatic detection |
+| `PHONEBT_AUDIO` | `continuity` | `continuity` or `bluetooth` (SCO audio, refused by recent macOS) |
+| `PHONEBT_PROFILE` | `~/.phonebt/profile.md` | User info file |
+| `PHONEBT_PROMPT_FILE` | — | Extra instructions for the agent |
 
-Le journal de débogage est écrit dans `~/.phonebt/debug.log`.
+The debug log is written to `~/.phonebt/debug.log`.
 
-## Structure du projet
+## Project structure
 
 ```
 Sources/
-├── PhoneBTApp/      App macOS (SwiftUI)
-├── PhoneBT/         Interface en ligne de commande
-├── AgentBridge/     Session d'appel, agent local (Ollama), outils, Continuité
-├── AudioPipeline/   Capture système, sortie voix, Whisper, synthèse vocale, écoute
-├── HFPCore/         Bluetooth mains-libres (HFP) : connexion, état d'appel, DTMF
-└── Shared/          Modèles et journalisation
+├── PhoneBTApp/      macOS app (SwiftUI)
+├── PhoneBT/         Command-line interface
+├── AgentBridge/     Call session, local agent (Ollama), tools, Continuity
+├── AudioPipeline/   System capture, voice output, Whisper, speech synthesis, listening in
+├── HFPCore/         Bluetooth hands-free (HFP): connection, call state, DTMF
+└── Shared/          Models, localization and logging
 ```
 
-## Limites connues
+## Known limitations
 
-- **Bêta** : testé sur un nombre limité de configurations Mac / iPhone.
-- Les petits modèles locaux se trompent parfois (mauvaise touche de menu, réponse hors outil).
-  Des garde-fous bloquent les actions les plus risquées (numéros inventés, composition
-  pendant un appel), mais surveille les appels importants.
-- Composer et décrocher automatiquement dépendent de l'interface de FaceTime (Accessibilité) ;
-  si le bouton n'est pas trouvé, clique-le toi-même.
-- L'audio Bluetooth SCO direct est refusé par les versions récentes de macOS : le mode
-  Continuité est celui qui fonctionne.
+- **Beta**: tested on a limited number of Mac / iPhone setups.
+- Small local models sometimes get things wrong (wrong menu key, answer outside the tools).
+  Guards block the riskiest actions (made-up numbers, dialing during a call), but keep an eye
+  on important calls.
+- Dialing and answering automatically depend on FaceTime's interface (Accessibility); if the
+  button isn't found, click it yourself.
+- Direct Bluetooth SCO audio is refused by recent macOS versions: Continuity mode is the one
+  that works.
 
-## Licence
+## License
 
-Apache License 2.0, voir [LICENSE](LICENSE). Projet dérivé de
-[icoainc/phonebt](https://github.com/icoainc/phonebt) (Copyright 2026 ICOA Inc.), modifié :
-agent local avec Ollama, transcription Whisper, appels via Continuité, app macOS.
+Apache License 2.0, see [LICENSE](LICENSE). Derived from
+[icoainc/phonebt](https://github.com/icoainc/phonebt) (Copyright 2026 ICOA Inc.), modified:
+local agent with Ollama, Whisper transcription, calls through Continuity, macOS app,
+English/French interface.

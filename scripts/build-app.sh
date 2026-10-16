@@ -21,6 +21,9 @@ for s in 16 32 128 256 512; do
 done
 iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/AppIcon.icns"
 
+# Permission prompts in English and French
+cp -R Support/en.lproj Support/fr.lproj "$APP/Contents/Resources/"
+
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -37,14 +40,16 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>LSMinimumSystemVersion</key><string>13.0</string>
     <key>NSHighResolutionCapable</key><true/>
     <key>NSPrincipalClass</key><string>NSApplication</string>
+    <key>CFBundleDevelopmentRegion</key><string>en</string>
+    <key>CFBundleLocalizations</key><array><string>en</string><string>fr</string></array>
     <key>NSBluetoothAlwaysUsageDescription</key>
-    <string>PhoneBT se connecte à ton téléphone en Bluetooth (profil mains-libres) pour passer et recevoir des appels.</string>
+    <string>PhoneBT connects to your phone over Bluetooth (hands-free profile) to place and receive calls.</string>
     <key>NSAudioCaptureUsageDescription</key>
-    <string>PhoneBT capte le son de l'appel joué par le Mac pour que l'agent IA entende l'interlocuteur.</string>
+    <string>PhoneBT captures the call audio played by the Mac so the AI agent can hear the caller.</string>
     <key>NSMicrophoneUsageDescription</key>
-    <string>PhoneBT écoute l'audio de l'appel pour que l'agent IA entende l'interlocuteur.</string>
+    <string>PhoneBT listens to the call audio so the AI agent can hear the caller.</string>
     <key>NSSpeechRecognitionUsageDescription</key>
-    <string>PhoneBT transcrit localement ce que dit l'interlocuteur pour l'agent IA.</string>
+    <string>PhoneBT transcribes what the caller says, locally, for the AI agent.</string>
 </dict>
 </plist>
 PLIST
@@ -53,4 +58,4 @@ PLIST
 xattr -cr "$APP"
 codesign --force --deep --sign - "$APP"
 
-echo "✅ $APP prête — lance-la avec : open $APP"
+echo "✅ $APP ready — launch it with: open $APP"

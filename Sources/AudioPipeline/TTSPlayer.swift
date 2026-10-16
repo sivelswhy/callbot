@@ -60,7 +60,7 @@ public final class TTSPlayer: @unchecked Sendable {
             .sorted { $0.quality.rawValue > $1.quality.rawValue }
     }
 
-    public var voiceName: String { voice?.name ?? "défaut système" }
+    public var voiceName: String { voice?.name ?? L("system default", "défaut système") }
 
     /// Detect the language of a text (ISO 639-1), e.g. "en" for English
     public static func detectLanguage(_ text: String) -> String? {
