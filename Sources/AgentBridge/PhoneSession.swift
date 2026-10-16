@@ -425,7 +425,7 @@ public final class PhoneSession: @unchecked Sendable {
         }
         if let agent = withLock({ self.agent }) {
             Task {
-                await agent.keysPressed()
+                await agent.keysPressed(String(digits), byUser: true)
                 await agent.addNote("The user pressed the keys \(String(digits)) themselves")
             }
         }

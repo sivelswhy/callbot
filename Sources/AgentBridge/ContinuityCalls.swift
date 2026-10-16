@@ -216,8 +216,11 @@ public final class ContinuityCalls: @unchecked Sendable {
             if !pressed {
                 // The keypad is hidden: open it (Keypad / Clavier button), then retry
                 _ = await MainActor.run { Self.findAndPress(titles: ["Clavier", "Keypad", "Pavé numérique"], exact: true) }
-                try? await Task.sleep(nanoseconds: 600_000_000)
-                pressed = await MainActor.run { Self.pressKeypadButton(digit) }
+                // The keypad takes a moment to appear
+                for _ in 0..<10 where !pressed {
+                    try? await Task.sleep(nanoseconds: 250_000_000)
+                    pressed = await MainActor.run { Self.pressKeypadButton(digit) }
+                }
             }
             guard pressed else {
                 logger.error("Keypad button \(digit) not found")

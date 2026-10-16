@@ -55,6 +55,8 @@ public actor LocalAgent {
     private var callConnected = false
     /// Last thing the caller said (to check what a menu asked for)
     private var lastCallerText = ""
+    /// What really happened in this call (heard / pressed), for an accurate summary
+    private var callJournal: [String] = []
     /// Is the other party talking (or being transcribed) right now?
     private let callerActivity: (@Sendable () -> Bool)?
     private let systemPrompt: String
@@ -165,13 +167,12 @@ public actor LocalAgent {
     /// Process a user message through the agent loop, returning the final text response
     public func processMessage(_ userMessage: String) async throws -> String {
         knownNumbers.formUnion(Self.numbers(in: userMessage))
-        missionNotes.append(userMessage)
-        if missionNotes.count > 6 { missionNotes.removeFirst() }
 
-        // "appuie sur 1", "press 3": do it now, the model sometimes didn't
+        // "appuie sur 1", "press 3": do it now, the model sometimes didn't. A one-off order,
+        // not part of the mission (otherwise the model presses it again at the next menu)
         if outgoingCall != nil || toolExecutor.isInCall, let keys = Self.directKeyCommand(userMessage) {
             let result = toolExecutor.execute(toolName: "send_dtmf", input: ["digits": keys])
-            if result.contains(#""success":true"#) { keysPressed() }
+            if result.contains(#""success":true"#) { keysPressed(keys, byUser: true) }
             conversationHistory.append(ChatMessage(role: "user", content: userMessage))
             conversationHistory.append(ChatMessage(role: "assistant", content: "", toolCalls: [
                 ToolCall(function: .init(name: "send_dtmf", arguments: ["digits": .string(keys)]))
@@ -180,6 +181,8 @@ public actor LocalAgent {
             logger.info("Direct key command: \(keys)")
             return ""
         }
+        missionNotes.append(userMessage)
+        if missionNotes.count > 6 { missionNotes.removeFirst() }
         conversationHistory.append(ChatMessage(role: "user", content: userMessage))
         return try await runAgentLoop(speakFallback: false)
     }
@@ -194,7 +197,8 @@ public actor LocalAgent {
     }
 
     /// Keys were just pressed (by the agent or the user): the menu being read is over
-    func keysPressed() {
+    func keysPressed(_ keys: String, byUser: Bool = false) {
+        callJournal.append("pressed \(keys)" + (byUser ? " (the user asked)" : " (your choice)"))
         lastKeyPress = Date()
         _ = takePendingMenu()
     }
@@ -210,6 +214,7 @@ public actor LocalAgent {
     public func injectCallerSpeech(_ text: String, language: String? = nil, completeMenu: Bool = false) async throws -> String {
         heardCaller = true
         lastCallerText = text
+        callJournal.append("heard: \"\(text.prefix(300))\"")
         var attributes = language.map { " lang=\($0)" } ?? ""
         if let outgoingCall { attributes += outgoingCall ? " call=outgoing" : " call=incoming" }
         let tag = "[CALLER SPEECH\(attributes)]"
@@ -282,10 +287,28 @@ public actor LocalAgent {
     private var missionReminder: String {
         guard !missionNotes.isEmpty else { return "\n[MISSION] none given yet — if a choice is needed, ask_user" }
         let asked = "\n[MISSION] the user asked: " + missionNotes.map { "\"\($0)\"" }.joined(separator: " then ")
+        if wantsInfoOnly {
+            return asked + " — the user only wants to KNOW what this line offers: don't choose menu options (except the \(UILanguage.agent.englishName) language); report the options with ask_user"
+        }
         if missionNotes.allSatisfy(Self.isDialOnly) {
             return asked + " — only to call, with no goal: for any menu choice or question, ask_user (don't guess)"
         }
         return asked
+    }
+
+    /// The latest instruction only asks what the line is / what it offers
+    private var wantsInfoOnly: Bool { missionNotes.last.map(Self.isInfoOnly) ?? false }
+
+    /// "Appelle le *2994 et dis-moi ce que c'est", "call 3900 and tell me the options"
+    static func isInfoOnly(_ text: String) -> Bool {
+        text.lowercased().range(of: #"ce que c'est|c'est quoi|qu'est-ce que c'est|quelles? (sont les )?options|ce qu'il y a|ce qu'ils proposent|what (it|this|that) is|what's on|tell me the options|what options"#, options: .regularExpression) != nil
+    }
+
+    /// A menu that offers languages ("For English press 2, pour le français…")
+    static func isLanguageMenu(_ text: String) -> Bool {
+        let t = text.lowercased()
+        let names = ["english", "anglais", "français", "french", "русск", "russian", "עברית", "hebrew", "hébreu", "español", "spanish", "عربي", "arabic", "arabe", "amharic", "አማርኛ"]
+        return names.filter { t.contains($0) }.count >= 2
     }
 
     /// "Appelle le 3900", "call *166": a number to call, without saying what for
@@ -406,7 +429,8 @@ public actor LocalAgent {
                         response = try await self.handleIncomingCall(number: number)
                     case .callEnded:
                         if await self.callConnected {
-                            response = try await self.injectEvent("The call has ended (don't use end_call, it's already hung up) — give the user a short summary: only what you actually heard and did; say clearly what was NOT confirmed")
+                            let journal = await self.callJournal.joined(separator: "\n")
+                            response = try await self.injectEvent("The call has ended (don't use end_call, it's already hung up) — give the user a short summary. What really happened, in order (trust this over your memory):\n\(journal)\nSay what the line is and list the options you heard; only state facts from this list; say clearly what was NOT confirmed")
                         } else {
                             await self.addNote("The call ended before anyone answered")
                             response = nil
@@ -461,6 +485,7 @@ public actor LocalAgent {
         menuWantsSpeech = false
         _ = takePendingMenu()
         pendingMenuLanguage = nil
+        if value != nil { callJournal.removeAll() }
     }
 
     /// Voice server phrases: greetings, recordings, menus
@@ -584,6 +609,9 @@ public actor LocalAgent {
                     } else {
                         result = #"{"error":"Refused: no call in progress, keys can't be sent. To place a call, use dial_number with the number the user gave.","success":false}"#
                     }
+                } else if name == "send_dtmf" && wantsInfoOnly && !Self.isLanguageMenu(lastCallerText) {
+                    logger.info("send_dtmf blocked: the user only wants to know the options")
+                    result = #"{"error":"Refused: the user only asked what this line offers — don't choose. Report the options you heard with ask_user (options = the menu choices), then WAIT.","success":false}"#
                 } else if name == "send_dtmf", let refusal = dtmfRefusal(input, alreadySent: keysSent) {
                     logger.info("send_dtmf blocked: \(refusal)")
                     result = #"{"error":"\#(refusal)","success":false}"#
@@ -602,7 +630,10 @@ public actor LocalAgent {
                 } else {
                     result = toolExecutor.execute(toolName: name, input: input)
                 }
-                if name == "send_dtmf", result.contains(#""success":true"#) { keysPressed() }
+                if name == "send_dtmf", result.contains(#""success":true"#) {
+                    let sent = (try? JSONSerialization.jsonObject(with: Data(result.utf8)) as? [String: Any])?["digits"] as? String
+                    keysPressed(sent ?? "?")
+                }
                 conversationHistory.append(ChatMessage(role: "tool", content: result, toolName: name))
                 if result.contains(#""success":true"#) {
                     if name == "send_dtmf" { keysSent = true }

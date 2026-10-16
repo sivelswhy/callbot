@@ -100,4 +100,16 @@ final class LocalFeaturesTests: XCTestCase {
         XCTAssertFalse(LocalAgent.looksLikeMenu("Nos bureaux sont ouverts du dimanche au jeudi de 9h à 18h."))
         XCTAssertTrue(LocalAgent.looksLikeMenu("Veuillez saisir votre numéro d'identité"))
     }
+
+    func testInfoOnlyMission() {
+        XCTAssertTrue(LocalAgent.isInfoOnly("appelle le *2994 et dis moi ce que c'est"))
+        XCTAssertTrue(LocalAgent.isInfoOnly("Appelle *2994 (avec l'étoile) et dis moi c'est quoi"))
+        XCTAssertFalse(LocalAgent.isInfoOnly("Appelle le 3900 et demande ma facture"))
+    }
+
+    func testLanguageMenu() {
+        XCTAssertTrue(LocalAgent.isLanguageMenu("For English, press two. Для получения информации на русском языке"))
+        XCTAssertTrue(LocalAgent.isLanguageMenu("Pour le français tapez 4, for English press 2"))
+        XCTAssertFalse(LocalAgent.isLanguageMenu("To arrange an appointment, please press one"))
+    }
 }
