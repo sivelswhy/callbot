@@ -191,10 +191,61 @@ public final class ContinuityCalls: @unchecked Sendable {
         await clickButton(titles: ["Raccrocher", "End", "Terminer", "Fin"], timeout: 2)
     }
 
+    // MARK: Keypad (DTMF)
+
+    /// Press keys on the keypad of the Mac's call window (Phone / FaceTime). During a
+    /// Continuity call this is the channel that reaches the network: keys sent to the iPhone
+    /// over Bluetooth (AT+VTS) were ignored.
+    /// - Returns: false if the keypad couldn't be found (the caller then falls back to Bluetooth)
+    public func pressKeypad(_ digits: [Character], interval: TimeInterval = 0.3) async -> Bool {
+        guard Self.isAccessibilityTrusted, !digits.isEmpty else { return false }
+        for (i, digit) in digits.enumerated() {
+            if i > 0 { try? await Task.sleep(nanoseconds: UInt64(interval * 1_000_000_000)) }
+            var pressed = await MainActor.run { Self.pressKeypadButton(digit) }
+            if !pressed {
+                // The keypad is hidden: open it (Keypad / Clavier button), then retry
+                _ = await MainActor.run { Self.findAndPress(titles: ["Clavier", "Keypad", "Pavé numérique"], exact: true) }
+                try? await Task.sleep(nanoseconds: 600_000_000)
+                pressed = await MainActor.run { Self.pressKeypadButton(digit) }
+            }
+            guard pressed else {
+                logger.error("Keypad button \(digit) not found")
+                return false
+            }
+            logger.info("Keypad: pressed \(digit)")
+        }
+        return true
+    }
+
+    /// Labels a keypad button may have for a key ("2", "2 ABC", "étoile", "dièse"…)
+    static func keypadLabels(_ digit: Character) -> [String] {
+        switch digit {
+        case "*": return ["*", "étoile", "star", "asterisk", "astérisque"]
+        case "#": return ["#", "dièse", "pound", "hash", "carré"]
+        default: return [String(digit)]
+        }
+    }
+
+    @MainActor
+    private static func pressKeypadButton(_ digit: Character) -> Bool {
+        let labels = keypadLabels(digit)
+        for app in callApps() {
+            let root = AXUIElementCreateApplication(app.processIdentifier)
+            if let button = findButton(in: root, depth: 0, matching: { label in
+                // "2" or "2 ABC", but not "20:41" or a phone number
+                labels.contains { label == $0 || (label.hasPrefix($0 + " ") && label.count <= 8) }
+            }) {
+                return AXUIElementPerformAction(button, kAXPressAction as CFString) == .success
+            }
+        }
+        return false
+    }
+
     // MARK: - Accessibility automation
 
     /// Apps that show call UI: FaceTime window, notification banners, call service UI
     private static let callUIBundleIDs: Set<String> = [
+        "com.apple.mobilephone",
         "com.apple.FaceTime",
         "com.apple.notificationcenterui",
         "com.apple.UserNotificationCenter",
@@ -218,15 +269,21 @@ public final class ContinuityCalls: @unchecked Sendable {
     }
 
     @MainActor
-    private static func findAndPress(titles: [String]) -> Bool {
-        let wanted = titles.map { $0.lowercased() }
-        let apps = NSWorkspace.shared.runningApplications.filter {
+    private static func callApps() -> [NSRunningApplication] {
+        NSWorkspace.shared.runningApplications.filter {
             guard let id = $0.bundleIdentifier else { return false }
             return callUIBundleIDs.contains(id) || id.localizedCaseInsensitiveContains("facetime")
         }
-        for app in apps {
+    }
+
+    @MainActor
+    private static func findAndPress(titles: [String], exact: Bool = false) -> Bool {
+        let wanted = titles.map { $0.lowercased() }
+        for app in callApps() {
             let root = AXUIElementCreateApplication(app.processIdentifier)
-            if let button = findButton(in: root, wanted: wanted, depth: 0) {
+            if let button = findButton(in: root, depth: 0, matching: { label in
+                wanted.contains { label == $0 || (!exact && label.hasPrefix($0)) }
+            }) {
                 let result = AXUIElementPerformAction(button, kAXPressAction as CFString)
                 if result == .success { return true }
             }
@@ -234,13 +291,13 @@ public final class ContinuityCalls: @unchecked Sendable {
         return false
     }
 
-    private static func findButton(in element: AXUIElement, wanted: [String], depth: Int) -> AXUIElement? {
-        guard depth < 14 else { return nil }
+    private static func findButton(in element: AXUIElement, depth: Int, matching: (String) -> Bool) -> AXUIElement? {
+        guard depth < 16 else { return nil }
 
         if attribute(element, kAXRoleAttribute) == kAXButtonRole as String {
             let labels = [kAXTitleAttribute, kAXDescriptionAttribute, kAXIdentifierAttribute]
-                .compactMap { attribute(element, $0)?.lowercased() }
-            if labels.contains(where: { label in wanted.contains { label == $0 || label.hasPrefix($0) } }) {
+                .compactMap { attribute(element, $0)?.lowercased().trimmingCharacters(in: .whitespaces) }
+            if labels.contains(where: matching) {
                 return element
             }
         }
@@ -251,7 +308,7 @@ public final class ContinuityCalls: @unchecked Sendable {
             return nil
         }
         for child in list {
-            if let found = findButton(in: child, wanted: wanted, depth: depth + 1) { return found }
+            if let found = findButton(in: child, depth: depth + 1, matching: matching) { return found }
         }
         return nil
     }

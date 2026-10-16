@@ -67,4 +67,37 @@ final class LocalFeaturesTests: XCTestCase {
         XCTAssertEqual(TTSPlayer.detectLanguage("שלום, אני רוצה לבטל את המנוי"), "he")
         XCTAssertEqual(TTSPlayer.detectLanguage("Bonjour, je voudrais résilier mon abonnement"), "fr")
     }
+
+    func testDirectKeyCommands() {
+        XCTAssertEqual(LocalAgent.directKeyCommand("appuie sur 1"), "1")
+        XCTAssertEqual(LocalAgent.directKeyCommand("Appuis sur la touche 4."), "4")
+        XCTAssertEqual(LocalAgent.directKeyCommand("press 3"), "3")
+        XCTAssertEqual(LocalAgent.directKeyCommand("tape 2#"), "2#")
+        XCTAssertNil(LocalAgent.directKeyCommand("appuie sur 1 et mets le français"))
+        XCTAssertNil(LocalAgent.directKeyCommand("tape mon numéro client"))
+    }
+
+    func testDialOnlyMission() {
+        XCTAssertTrue(LocalAgent.isDialOnly("Appelle le 3900"))
+        XCTAssertTrue(LocalAgent.isDialOnly("call *166"))
+        XCTAssertFalse(LocalAgent.isDialOnly("Appelle le 3900 et demande ma facture"))
+    }
+
+    func testMenuKeysDropUnaskedHash() {
+        XCTAssertEqual(LocalAgent.menuKeys("4#", heard: "Pour le français, appuyez sur 4"), "4")
+        XCTAssertEqual(LocalAgent.menuKeys("4#", heard: "Tapez 4 suivi de dièse"), "4#")
+        XCTAssertEqual(LocalAgent.menuKeys("123#", heard: "Saisissez votre code"), "123#")
+    }
+
+    func testKnownNumbersAreWholeNumbers() {
+        let numbers = LocalAgent.numbers(in: "ID : 123 456 789\nTéléphone : 06-12-34-56-78")
+        XCTAssertTrue(numbers.contains("123456789"))
+        XCTAssertTrue(numbers.contains("0612345678"))
+        XCTAssertFalse(numbers.contains("12345678"))
+    }
+
+    func testInformationIsNotAMenu() {
+        XCTAssertFalse(LocalAgent.looksLikeMenu("Nos bureaux sont ouverts du dimanche au jeudi de 9h à 18h."))
+        XCTAssertTrue(LocalAgent.looksLikeMenu("Veuillez saisir votre numéro d'identité"))
+    }
 }

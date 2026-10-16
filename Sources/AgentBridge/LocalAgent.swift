@@ -27,7 +27,7 @@ public actor LocalAgent {
 
     private var conversationHistory: [ChatMessage] = []
     /// Digits the agent may type: from the user's profile and messages (never invented)
-    private var knownDigits: String
+    private var knownNumbers: Set<String>
     /// Direction of the current call: true when we placed it, false when it came in, nil without a call
     private var outgoingCall: Bool?
     /// The other party has said something during the current call
@@ -44,6 +44,17 @@ public actor LocalAgent {
     private let menuPause: UInt64 = 1_500_000_000
     /// A person has spoken in the current outgoing call ("allô ?", "Dana speaking…")
     private var humanConfirmed = false
+    /// When keys were last pressed: speech transcribed just after was spoken before the press
+    /// (Whisper lags ~1–2 s) and belongs to the previous menu
+    private var lastKeyPress: Date?
+    private let keyPressEcho: TimeInterval = 3
+    /// The user's instructions for the current mission (restated to the model with each turn:
+    /// small models forget them after a few menu steps)
+    private var missionNotes: [String] = []
+    /// The current call was answered (summaries only make sense then)
+    private var callConnected = false
+    /// Last thing the caller said (to check what a menu asked for)
+    private var lastCallerText = ""
     /// Is the other party talking (or being transcribed) right now?
     private let callerActivity: (@Sendable () -> Bool)?
     private let systemPrompt: String
@@ -51,55 +62,57 @@ public actor LocalAgent {
 
     public static let baseSystemPrompt = """
         You are a phone assistant acting ON BEHALF of the user (the person you work for, who \
-        follows you from their computer). You place and receive calls through their phone \
-        connected over Bluetooth. The "caller" is the person or voice server on the line — \
-        not the user.
+        follows the call from their computer). You place and receive calls with their phone. \
+        The "caller" is whoever is on the line (a person or a voice server) — never the user.
 
-        Messages you receive:
-        - Messages without a prefix: instructions or answers from the user.
-        - [CALLER SPEECH lang=xx call=outgoing|incoming] "...": transcription of what the caller \
-        says (xx = detected language: en, fr, es…). The transcription may contain errors. If it \
-        is followed by (MENU), a voice server is reading options.
-        - [PHONE EVENT]: phone event (incoming call, audio connected, call ended…).
-        - [NOTE]: context (e.g. what the user said themselves in the call).
+        # 1. The user's instructions come first
+        - Do exactly what the user asks, right away, even in the middle of a call: press the key \
+        they name, say what they want said, hang up when they say so. Their instructions \
+        override your own judgment and any previous plan.
+        - Remember the mission for the whole call. Each caller message ends with [MISSION]: the \
+        user's instructions so far. Every action must serve it.
 
-        Rules during a call:
-        - To talk to the caller, ALWAYS use the say_to_caller tool: it is the only way they can \
-        hear you. Never repeat what the caller just said.
-        - Answer in the caller's language (lang field) and pass it in the language parameter of \
-        say_to_caller, whatever that language is.
-        - Short, natural sentences, as when speaking (one or two sentences), no emoji, no \
-        markdown, no lists.
-        - Voice server (automated menu): listen to the options ("for X, press 1", "pour X, \
-        tapez 1") and choose with send_dtmf the one that serves the mission. If you are asked to \
-        enter a number (ID, customer number, date…), send it with send_dtmf, followed by # if \
-        requested. Don't talk to a voice server unless it asks for a spoken answer.
-        - If you have nothing to say (the voice server is still talking, hold music, incomplete \
-        sentence), answer only with the word WAIT, without any tool.
-        - If you are missing information or a decision, use ask_user (with options when there \
-        are possible choices), then politely ask a human caller to hold on. Never make up \
-        information: no customer number, code or identity. When a voice server asks for an \
-        identifier you don't have, use ask_user.
-        - Only share the user's personal data when it is needed for the mission and requested.
-        - When the mission is done or the caller says goodbye, say goodbye, then use end_call, \
-        and give the user a short summary.
+        # 2. Messages you receive
+        - No prefix: an instruction or answer from the user.
+        - [CALLER SPEECH lang=xx call=outgoing|incoming] "...": what the caller said (detected \
+        language xx). Transcriptions contain errors: rely on the meaning, not the exact words. \
+        (MENU) / (FULL MENU) = a voice server reading options.
+        - [PHONE EVENT]: call events. [NOTE]: context, no answer needed.
 
-        Your answers to the user never start with a bracketed prefix. For a call you placed \
-        yourself, there is nothing to pick up: "call active" means the other party answered.
+        # 3. Voice servers (automated menus)
+        - Never talk to a voice server (it doesn't understand speech) unless it asks you to say \
+        something. Use send_dtmf.
+        - Press ONE key per menu, then wait for what comes next. Never press a key for an option \
+        the user didn't ask for.
+        - Language choice ("for English press 2", "pour le français tapez 4"): press the key for \
+        {USER_LANGUAGE}, else English, unless the user asked otherwise.
+        - Other menus: press the option that matches the mission. If none clearly matches, or \
+        there is no mission yet: ask_user, listing ONLY the options you actually heard ("key — \
+        option", translated into {USER_LANGUAGE}), and wait.
+        - Asked for a number (ID, customer number, date of birth…): type it with send_dtmf (+ # if \
+        asked) only if THAT exact kind of number is in the user's info or messages (an ID number \
+        is not a customer number); otherwise ask_user. Never make up digits.
+        - Information, hold music, "please wait", incomplete menu: answer WAIT (the single word, \
+        no tool).
 
-        When the user asks you to call someone, use dial_number and remember the mission. \
-        Outgoing call: LISTEN FIRST, never speak first. Most service numbers (short codes, \
-        1-800…) answer with a voice server: listen to the options and navigate the menu with \
-        send_dtmf, choosing at each step the option closest to the mission; if the menu isn't \
-        finished, answer WAIT. Only speak when a human answers ("hello", "allô", "this is Dana, \
-        how can I help?") or a voice server explicitly asks you to speak. Then introduce yourself \
-        once and state the reason for your call directly, for example "Hello, I'm John Smith's \
-        assistant, I'm calling about…". Never ask the other party what the call is about or \
-        what you can do for them. A voice menu reaches you in full (FULL MENU): then choose ONE \
-        key with send_dtmf. If no option clearly matches the mission, or if you don't know the \
-        mission, use ask_user listing the options translated into {USER_LANGUAGE}, and wait for \
-        the answer. If the call ends without success (busy, no answer), tell the user. With the \
-        user, speak {USER_LANGUAGE} (also in ask_user), be concise and report clearly.
+        # 4. Talking with a person
+        - Speak only with say_to_caller: it is the only way the caller hears you. One or two \
+        short, natural spoken sentences; no emoji, markdown or lists.
+        - Answer in the caller's language (lang field) and pass it as the language parameter.
+        - Outgoing call: LISTEN FIRST, never speak first. When a person answers ("hello", "allô", \
+        "this is Dana, how can I help?"), introduce yourself once and state the reason for the \
+        call directly, e.g. "Hello, I'm calling on behalf of <user's name> about…". Never ask \
+        them what the call is about.
+        - Missing information or a decision: ask_user, then ask the person to hold on.
+        - Share the user's personal data only when needed for the mission and asked for.
+        - Mission done or the caller says goodbye: say goodbye, then end_call.
+
+        # 5. Reporting to the user
+        - Speak {USER_LANGUAGE} with the user (also in ask_user). Be brief and factual.
+        - After a call, report only what you actually heard and did. Say clearly what was NOT \
+        confirmed. Never claim a success the caller didn't confirm.
+        - For a call you placed, there is nothing to pick up: "call active" means they answered. \
+        Your answers to the user never start with a bracketed prefix.
         """
 
     public init(
@@ -112,7 +125,7 @@ public actor LocalAgent {
         callerActivity: (@Sendable () -> Bool)? = nil
     ) {
         self.callerActivity = callerActivity
-        self.knownDigits = Self.digitsOnly(userProfile ?? "")
+        self.knownNumbers = Self.numbers(in: userProfile ?? "")
         self.client = client
         self.toolExecutor = toolExecutor
         self.eventStream = eventStream
@@ -151,9 +164,39 @@ public actor LocalAgent {
 
     /// Process a user message through the agent loop, returning the final text response
     public func processMessage(_ userMessage: String) async throws -> String {
+        knownNumbers.formUnion(Self.numbers(in: userMessage))
+        missionNotes.append(userMessage)
+        if missionNotes.count > 6 { missionNotes.removeFirst() }
+
+        // "appuie sur 1", "press 3": do it now, the model sometimes didn't
+        if outgoingCall != nil || toolExecutor.isInCall, let keys = Self.directKeyCommand(userMessage) {
+            let result = toolExecutor.execute(toolName: "send_dtmf", input: ["digits": keys])
+            if result.contains(#""success":true"#) { keysPressed() }
+            conversationHistory.append(ChatMessage(role: "user", content: userMessage))
+            conversationHistory.append(ChatMessage(role: "assistant", content: "", toolCalls: [
+                ToolCall(function: .init(name: "send_dtmf", arguments: ["digits": .string(keys)]))
+            ]))
+            conversationHistory.append(ChatMessage(role: "tool", content: result, toolName: "send_dtmf"))
+            logger.info("Direct key command: \(keys)")
+            return ""
+        }
         conversationHistory.append(ChatMessage(role: "user", content: userMessage))
-        knownDigits += " " + Self.digitsOnly(userMessage)
         return try await runAgentLoop(speakFallback: false)
+    }
+
+    /// A message that only asks to press keys ("appuie sur 1", "tape 4", "press 2#")
+    static func directKeyCommand(_ text: String) -> String? {
+        let t = text.lowercased().trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters.subtracting(CharacterSet(charactersIn: "*#"))))
+        let pattern = #"^(appuie|appuies|appuis|appuyer|appuyez|tape|tapes|taper|tapez|presse|press|hit|dial|touche)( sur| on)?( la touche| the key| key| touche)?\s*([0-9*#][0-9*# ]*)$"#
+        guard let match = t.range(of: pattern, options: .regularExpression) else { return nil }
+        let keys = String(t[match]).filter { $0.isNumber || $0 == "*" || $0 == "#" }
+        return keys.isEmpty || keys.count > 3 ? nil : keys
+    }
+
+    /// Keys were just pressed (by the agent or the user): the menu being read is over
+    func keysPressed() {
+        lastKeyPress = Date()
+        _ = takePendingMenu()
     }
 
     /// Inject a system event (e.g., incoming call notification) into the conversation
@@ -166,18 +209,20 @@ public actor LocalAgent {
     /// say_to_caller, that text is spoken anyway so the caller always gets a reply.
     public func injectCallerSpeech(_ text: String, language: String? = nil, completeMenu: Bool = false) async throws -> String {
         heardCaller = true
+        lastCallerText = text
         var attributes = language.map { " lang=\($0)" } ?? ""
         if let outgoingCall { attributes += outgoingCall ? " call=outgoing" : " call=incoming" }
         let tag = "[CALLER SPEECH\(attributes)]"
         let menu: String
         if completeMenu {
-            menu = " (FULL MENU) — voice server: if an option clearly matches the mission, press it with send_dtmf (a single key, without speaking). If you're unsure, don't know the mission, or it asks for an identifier you don't have: ask_user with the options translated (e.g. '1 — service for this number'). If the message expects no key: WAIT"
+            menu = " (FULL MENU) — voice server. Decide in this order: 1) no key is offered (information, opening hours, hold message) → WAIT. 2) language choice → the key for {USER_LANGUAGE}, else English. 3) it asks for a number → type it if it is in the user's info, else ask_user. 4) one option clearly matches the [MISSION] → press that single key. 5) otherwise (the mission doesn't say which option, e.g. just \"call X\") → ask_user listing ONLY the options heard, as 'key — option'."
         } else if ivrMode || Self.looksLikeMenu(text) {
-            menu = " (MENU) — voice server: choose the option with send_dtmf without speaking, or answer WAIT if the menu isn't finished"
+            menu = " (MENU, incomplete — more options may follow) — press a key ONLY if the option matching the [MISSION] (or {USER_LANGUAGE} in a language choice) was just read; otherwise WAIT."
         } else {
             menu = ""
         }
-        conversationHistory.append(ChatMessage(role: "user", content: "\(tag) \"\(text)\"\(menu)"))
+        let hint = menu.replacingOccurrences(of: "{USER_LANGUAGE}", with: UILanguage.agent.englishName)
+        conversationHistory.append(ChatMessage(role: "user", content: "\(tag) \"\(text)\"\(hint)\(missionReminder)"))
         // Never read the model's plain text aloud to a voice menu
         return try await runAgentLoop(speakFallback: !ivrMode)
     }
@@ -195,6 +240,10 @@ public actor LocalAgent {
         }
         // Outgoing call: assume a voice server until a person clearly speaks (service numbers
         // almost always start with a recording, and Whisper may miss its first words)
+        if ivrMode, let lastKeyPress, Date().timeIntervalSince(lastKeyPress) < keyPressEcho {
+            logger.info("Ignoring menu speech heard right after a key press: \(text.prefix(60))")
+            return nil
+        }
         if outgoingCall == true && (!humanConfirmed || Self.looksLikeIVR(text)) {
             if !ivrMode { logger.info("Listening as IVR — waiting for complete messages") }
             humanConfirmed = false  // e.g. transferred back to a recording
@@ -229,6 +278,22 @@ public actor LocalAgent {
         return try await injectCallerSpeech(text, language: language)
     }
 
+    /// The user's instructions, restated with each caller message
+    private var missionReminder: String {
+        guard !missionNotes.isEmpty else { return "\n[MISSION] none given yet — if a choice is needed, ask_user" }
+        let asked = "\n[MISSION] the user asked: " + missionNotes.map { "\"\($0)\"" }.joined(separator: " then ")
+        if missionNotes.allSatisfy(Self.isDialOnly) {
+            return asked + " — only to call, with no goal: for any menu choice or question, ask_user (don't guess)"
+        }
+        return asked
+    }
+
+    /// "Appelle le 3900", "call *166": a number to call, without saying what for
+    static func isDialOnly(_ text: String) -> Bool {
+        let t = text.lowercased().trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters.subtracting(CharacterSet(charactersIn: "*#+"))))
+        return t.range(of: #"^(appelle|appeler|rappelle|compose|call|dial|phone)( le| la| au| the)?\s*[0-9*#+][0-9*#+ .-]*$"#, options: .regularExpression) != nil
+    }
+
     /// Tools that act in the call or wait for the user: after them, wait for the next event
     static let turnEndingTools: Set<String> = ["send_dtmf", "say_to_caller", "end_call", "ask_user", "dial_number", "accept_call"]
 
@@ -240,10 +305,46 @@ public actor LocalAgent {
             return "Refused: one entry at a time. Wait for the voice server's answer."
         }
         // One or two keys = a menu choice. Longer = an identifier: it must come from the user.
-        if digits.count > 2 && !knownDigits.contains(digits) {
+        if digits.count > 2 && !knownNumbers.contains(digits) {
             return "Refused: never make up a number. Ask for it with ask_user (or answer WAIT)."
         }
         return nil
+    }
+
+    /// The number as the user typed it: models drop the * or # of service codes ("*0555" → "0555")
+    private func numberAsTyped(_ number: String) -> String {
+        let digits = Self.digitsOnly(number)
+        guard !digits.isEmpty else { return number }
+        for note in missionNotes.reversed() {
+            for token in note.split(whereSeparator: { $0 == " " || $0 == "," }) {
+                let candidate = token.filter { $0.isNumber || $0 == "*" || $0 == "#" || $0 == "+" }
+                if Self.digitsOnly(candidate) == digits, candidate != number { return String(candidate) }
+            }
+            // "appelle le*0555": the number glued to a word
+            if let range = note.range(of: #"[*#+]?\d[\d *#-]*"#, options: .regularExpression) {
+                let candidate = note[range].filter { $0.isNumber || $0 == "*" || $0 == "#" || $0 == "+" }
+                if Self.digitsOnly(candidate) == digits { return String(candidate) }
+            }
+        }
+        return number
+    }
+
+    /// Every number written in a text ("123 456 789", "06-12-34-56-78" count as one), digits only
+    static func numbers(in text: String) -> Set<String> {
+        var found = Set<String>()
+        var rest = text[...]
+        while let range = rest.range(of: #"\d[\d .\-/]*\d|\d"#, options: .regularExpression) {
+            found.insert(digitsOnly(String(rest[range])))
+            rest = rest[range.upperBound...]
+        }
+        return found
+    }
+
+    /// A menu choice doesn't take "#" unless the menu asked for it ("4#" → "4")
+    static func menuKeys(_ digits: String, heard: String) -> String {
+        guard digits.count == 2, digits.hasSuffix("#"), digits.first?.isNumber == true else { return digits }
+        let asksForHash = heard.range(of: #"#|dièse|diese|hash|pound|סולמית|carré"#, options: [.regularExpression, .caseInsensitive]) != nil
+        return asksForHash ? digits : String(digits.dropLast())
     }
 
     static func digitsOnly(_ text: String) -> String {
@@ -265,6 +366,13 @@ public actor LocalAgent {
     private func flushPendingMenu() async throws -> String? {
         guard outgoingCall != nil, let menu = takePendingMenu() else { return nil }
         menuWantsSpeech = Self.asksToSpeak(menu)
+        // Information or hold message: nothing to press or say, don't ask the model
+        // (it tended to press a key or ask the user anyway)
+        if !Self.looksLikeMenu(menu) && !menuWantsSpeech {
+            logger.info("Voice server message without choices: \(menu.prefix(80))")
+            conversationHistory.append(ChatMessage(role: "user", content: "[NOTE] The voice server said (no choice offered, nothing to do): \"\(menu)\""))
+            return nil
+        }
         logger.info("Complete menu: \(menu.prefix(80))")
         return try await injectCallerSpeech(menu, language: pendingMenuLanguage, completeMenu: true)
     }
@@ -297,9 +405,16 @@ public actor LocalAgent {
                         await self.setOutgoingCall(false)
                         response = try await self.handleIncomingCall(number: number)
                     case .callEnded:
-                        response = try await self.injectEvent("The call has ended (don't use end_call, it's already hung up) — give the user a short summary")
+                        if await self.callConnected {
+                            response = try await self.injectEvent("The call has ended (don't use end_call, it's already hung up) — give the user a short summary: only what you actually heard and did; say clearly what was NOT confirmed")
+                        } else {
+                            await self.addNote("The call ended before anyone answered")
+                            response = nil
+                        }
                         await self.setOutgoingCall(nil)
+                        await self.clearMission()
                     case .callActive:
+                        await self.markConnected()
                         // Audio isn't connected yet: the agent can't be heard, so don't
                         // make it speak now (it would greet again on scoConnected)
                         await self.addNote("The call is now active — wait for the audio to be connected")
@@ -332,8 +447,14 @@ public actor LocalAgent {
 
     // MARK: - Private
 
+    private func markConnected() { callConnected = true }
+
+    private func clearMission() { missionNotes.removeAll() }
+
     private func setOutgoingCall(_ value: Bool?) {
         outgoingCall = value
+        callConnected = false
+        lastKeyPress = nil
         heardCaller = false
         ivrMode = false
         humanConfirmed = false
@@ -381,9 +502,9 @@ public actor LocalAgent {
     /// Words IVR menus use to list options ("press 1 for…")
     static func looksLikeMenu(_ text: String) -> Bool {
         let t = text.lowercased()
-        return ["press", "dial ",
-                "tapez", "appuyez", "touche", "faites le",
-                "הקש", "הקישו", "לחץ", "לחצו", "שלוחה", "שלוחת", "בחר"]
+        return ["press", "dial ", "enter your", "type your", "key in",
+                "tapez", "appuyez", "touche", "faites le", "saisi", "entrez", "composez",
+                "הקש", "הקישו", "לחץ", "לחצו", "שלוחה", "שלוחת", "בחר", "הזינו", "הקלידו"]
             .contains { t.contains($0) }
     }
 
@@ -454,9 +575,18 @@ public actor LocalAgent {
                     // A voice menu doesn't understand speech: keys only, until a human answers
                     logger.info("say_to_caller blocked: IVR")
                     result = #"{"error":"Refused: this is a voice server, it doesn't understand speech. Use send_dtmf, or ask_user if you don't know which key to choose, or answer WAIT.","success":false}"#
+                } else if name == "send_dtmf", let raw = (input["digits"] ?? input["digit"]).map({ "\($0)" }),
+                          case let keys = Self.menuKeys(raw.replacingOccurrences(of: " ", with: ""), heard: lastCallerText), keys != raw {
+                    logger.info("send_dtmf: \(raw) → \(keys)")
+                    result = toolExecutor.execute(toolName: name, input: ["digits": keys])
+                } else if name == "dial_number" {
+                    var fixed = input
+                    if let number = input["number"] as? String { fixed["number"] = numberAsTyped(number) }
+                    result = toolExecutor.execute(toolName: name, input: fixed)
                 } else {
                     result = toolExecutor.execute(toolName: name, input: input)
                 }
+                if name == "send_dtmf", result.contains(#""success":true"#) { keysPressed() }
                 conversationHistory.append(ChatMessage(role: "tool", content: result, toolName: name))
                 if result.contains(#""success":true"#) {
                     if name == "send_dtmf" { keysSent = true }

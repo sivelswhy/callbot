@@ -56,6 +56,11 @@ PLIST
 
 # Files under ~/Documents carry extended attributes that break codesign
 xattr -cr "$APP"
-codesign --force --deep --sign - "$APP"
+# A stable identity (scripts/setup-signing.sh) keeps the permissions across rebuilds
+IDENTITY="-"
+if security find-identity -v -p codesigning 2>/dev/null | grep -q "PhoneBT Local Signing"; then
+    IDENTITY="PhoneBT Local Signing"
+fi
+codesign --force --deep --sign "$IDENTITY" "$APP"
 
 echo "✅ $APP ready — launch it with: open $APP"

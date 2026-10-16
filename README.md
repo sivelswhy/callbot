@@ -57,7 +57,7 @@ iPhone ──(Continuity "Calls on Other Devices")──► FaceTime on the Mac
   same Apple Account and paired with the Mac over Bluetooth
 - [Ollama](https://ollama.com) and a model that supports tools:
   ```bash
-  ollama pull qwen3:4b-instruct
+  ollama pull qwen3:8b
   ```
 - [whisper.cpp](https://github.com/ggml-org/whisper.cpp) and the `large-v3-turbo` model:
   ```bash
@@ -98,8 +98,10 @@ On first launch, allow PhoneBT in System Settings › Privacy & Security:
 At launch, the app checks every component (Ollama, Whisper, BlackHole, voice, permissions)
 and tells you what to fix; the **Check again** button runs the checks again.
 
-> The app is signed locally (ad hoc). After a rebuild, macOS may ask for some permissions
-> again.
+> **Keep the permissions across rebuilds**: run `./scripts/setup-signing.sh` once (it creates
+> a local signing certificate and asks for your password), then rebuild. Without it the app is
+> signed ad hoc and macOS revokes Accessibility after each rebuild — the agent then can't press
+> keys or click "Call" / "Accept".
 
 ## Usage
 
@@ -121,7 +123,7 @@ Optional environment variables:
 |---|---|---|
 | `PHONEBT_UI_LANG` | system language | App language: `en` or `fr` |
 | `PHONEBT_AGENT_LANG` | app language | Agent language: `en` or `fr` |
-| `PHONEBT_MODEL` | `qwen3:4b-instruct` | Ollama model (`qwen3:8b`: more reliable, twice as slow) |
+| `PHONEBT_MODEL` | `qwen3:8b` | Ollama model (`qwen3:4b-instruct`: twice as fast, much less reliable) |
 | `OLLAMA_HOST` | `http://localhost:11434` | Ollama server |
 | `PHONEBT_LOCALE` | agent language | Default speech locale (e.g. `en-GB`) |
 | `PHONEBT_VOICE` | best installed voice | Speech voice (name or identifier) |
@@ -153,8 +155,9 @@ Sources/
 - Small local models sometimes get things wrong (wrong menu key, answer outside the tools).
   Guards block the riskiest actions (made-up numbers, dialing during a call), but keep an eye
   on important calls.
-- Dialing and answering automatically depend on FaceTime's interface (Accessibility); if the
-  button isn't found, click it yourself.
+- Dialing, answering and pressing keys go through the Mac's call window (Phone / FaceTime) with
+  Accessibility: during a Continuity call, keys sent to the iPhone over Bluetooth are ignored.
+  If a button isn't found, click it yourself.
 - Direct Bluetooth SCO audio is refused by recent macOS versions: Continuity mode is the one
   that works.
 

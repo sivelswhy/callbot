@@ -22,6 +22,8 @@ public protocol CallActions: AnyObject, Sendable {
     func placeCall(_ number: String) throws
     func acceptCall() throws
     func endCall() throws
+    /// Press keys in the call; return false to fall back to Bluetooth DTMF
+    func sendKeys(_ digits: [Character]) async -> Bool
 }
 
 /// Executes tool calls by mapping them to HFP device commands
@@ -118,6 +120,20 @@ public final class ToolExecutor: @unchecked Sendable {
         let digits = Self.dtmfDigits(raw)
         guard !digits.isEmpty else {
             return errorJSON("Invalid DTMF digits: \(raw) (allowed: 0-9, *, #)")
+        }
+
+        if let actions {
+            let device = self.device
+            let interval = dtmfInterval
+            Task.detached { [logger] in
+                guard await !actions.sendKeys(digits) else { return }
+                logger.info("Keypad unavailable — sending DTMF over Bluetooth")
+                for (i, d) in digits.enumerated() {
+                    if i > 0 { try? await Task.sleep(nanoseconds: UInt64(interval * 1_000_000_000)) }
+                    do { try device.sendDTMF(String(d)) } catch { logger.error("DTMF \(d) failed: \(error)") }
+                }
+            }
+            return successJSON(["status": "sent", "digits": String(digits)])
         }
 
         // Send the first digit now (surfaces errors), the rest spaced out in the background

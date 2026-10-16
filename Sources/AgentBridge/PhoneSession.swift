@@ -59,7 +59,7 @@ public struct PhoneSessionConfig: Sendable {
         return PhoneSessionConfig(
             audioMode: CallAudioMode(rawValue: env["PHONEBT_AUDIO"] ?? "") ?? .continuity,
             ollamaURL: URL(string: host)!,
-            model: env["PHONEBT_MODEL"] ?? "qwen3:4b-instruct",
+            model: env["PHONEBT_MODEL"] ?? "qwen3:8b",
             locale: env["PHONEBT_LOCALE"],
             voice: env["PHONEBT_VOICE"],
             voiceRate: env["PHONEBT_VOICE_RATE"].flatMap(Float.init) ?? 0.52,
@@ -413,6 +413,8 @@ public final class PhoneSession: @unchecked Sendable {
         guard !digits.isEmpty else { return }
         log(.keys, String(digits))
         Task {
+            // Continuity call: the Phone app's keypad reaches the network, Bluetooth DTMF didn't
+            if await self.sendKeys(digits) { return }
             for (i, d) in digits.enumerated() {
                 if i > 0 { try? await Task.sleep(nanoseconds: 350_000_000) }
                 do { try device.sendDTMF(String(d)) } catch {
@@ -422,7 +424,10 @@ public final class PhoneSession: @unchecked Sendable {
             }
         }
         if let agent = withLock({ self.agent }) {
-            Task { await agent.addNote("The user pressed the keys \(String(digits)) themselves") }
+            Task {
+                await agent.keysPressed()
+                await agent.addNote("The user pressed the keys \(String(digits)) themselves")
+            }
         }
     }
 
@@ -977,6 +982,11 @@ extension PhoneSession: CallActions {
                 }
             }
         }
+    }
+
+    public func sendKeys(_ digits: [Character]) async -> Bool {
+        guard config.audioMode == .continuity else { return false }
+        return await continuity.pressKeypad(digits)
     }
 
     public func endCall() throws {

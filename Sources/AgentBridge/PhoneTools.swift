@@ -84,7 +84,7 @@ public enum PhoneTools {
             "options": [
                 "type": "array",
                 "items": ["type": "string"],
-                "description": "Optional short answers the user can click, in the user's language. For a voice menu, one per option with its key, e.g. '1 — service for this number'",
+                "description": "Optional short answers the user can click, in the user's language. For a voice menu, one per option actually heard, formatted 'key — option'",
             ],
         ],
         required: ["question"]

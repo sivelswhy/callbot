@@ -65,7 +65,7 @@ final class OllamaClientTests: XCTestCase {
         let env = ProcessInfo.processInfo.environment
         let client = OllamaClient(
             baseURL: URL(string: env["OLLAMA_HOST"] ?? "http://localhost:11434")!,
-            model: env["PHONEBT_MODEL"] ?? "qwen3:4b-instruct"
+            model: env["PHONEBT_MODEL"] ?? "qwen3:8b"
         )
         do {
             try await client.checkAvailability()
@@ -91,7 +91,7 @@ final class OllamaClientTests: XCTestCase {
         let env = ProcessInfo.processInfo.environment
         let client = OllamaClient(
             baseURL: URL(string: env["OLLAMA_HOST"] ?? "http://localhost:11434")!,
-            model: env["PHONEBT_MODEL"] ?? "qwen3:4b-instruct"
+            model: env["PHONEBT_MODEL"] ?? "qwen3:8b"
         )
         do {
             try await client.checkAvailability()
