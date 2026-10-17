@@ -30,7 +30,7 @@ public struct DiscoveredDevice: Sendable {
 }
 
 public final class BluetoothManager: NSObject, @unchecked Sendable {
-    private let logger = PhoneBTLogger(category: .bluetooth)
+    private let logger = CallbotLogger(category: .bluetooth)
     private var inquiry: IOBluetoothDeviceInquiry?
     private var discoveredDevices: [DiscoveredDevice] = []
     private var scanContinuation: CheckedContinuation<[DiscoveredDevice], Error>?

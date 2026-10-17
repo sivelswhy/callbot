@@ -19,7 +19,7 @@ import Shared
 /// Delegate that receives IOBluetoothHandsFreeDevice callbacks and forwards them as HFPEvents
 public final class HFPDelegate: NSObject, IOBluetoothHandsFreeDeviceDelegate, @unchecked Sendable {
     private let eventStream: HFPEventStream
-    private let logger = PhoneBTLogger(category: .hfp)
+    private let logger = CallbotLogger(category: .hfp)
 
     public init(eventStream: HFPEventStream) {
         self.eventStream = eventStream

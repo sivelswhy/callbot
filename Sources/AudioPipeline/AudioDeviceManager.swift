@@ -32,7 +32,7 @@ public struct AudioDeviceInfo: Sendable {
 }
 
 public final class AudioDeviceManager: Sendable {
-    private let logger = PhoneBTLogger(category: .audio)
+    private let logger = CallbotLogger(category: .audio)
 
     public init() {}
 

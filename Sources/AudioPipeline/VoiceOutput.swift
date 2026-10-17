@@ -31,7 +31,7 @@ public final class VoiceOutput: @unchecked Sendable {
 
     private let deviceID: AudioDeviceID
     private let deviceName: String
-    private let logger = PhoneBTLogger(category: .audio)
+    private let logger = CallbotLogger(category: .audio)
     private let lock = NSLock()
     private var queue: [Pending] = []
     private var procID: AudioDeviceIOProcID?

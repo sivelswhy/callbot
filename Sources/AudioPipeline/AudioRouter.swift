@@ -19,7 +19,7 @@ import Shared
 /// Routes audio between SCO Bluetooth connection and system audio devices
 public final class AudioRouter: @unchecked Sendable {
     private let deviceManager: AudioDeviceManager
-    private let logger = PhoneBTLogger(category: .audio)
+    private let logger = CallbotLogger(category: .audio)
 
     private var previousOutputDevice: AudioDeviceID?
     private var previousInputDevice: AudioDeviceID?

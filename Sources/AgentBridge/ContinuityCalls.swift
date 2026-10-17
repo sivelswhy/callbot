@@ -32,7 +32,7 @@ public final class ContinuityCalls: @unchecked Sendable {
         public let toCall: AudioDeviceInfo
     }
 
-    private let logger = PhoneBTLogger(category: .app)
+    private let logger = CallbotLogger(category: .app)
     private let deviceManager = AudioDeviceManager()
     private let lock = NSLock()
     private var savedOutput: AudioDeviceID?
@@ -165,12 +165,12 @@ public final class ContinuityCalls: @unchecked Sendable {
         _ = AXIsProcessTrustedWithOptions([key: true] as CFDictionary)
     }
 
-    /// Remove PhoneBT's Accessibility entry, then ask again. An ad hoc signed rebuild keeps
+    /// Remove Callbot's Accessibility entry, then ask again. An ad hoc signed rebuild keeps
     /// the old entry switched on in System Settings, but it no longer matches the app.
     public static func resetAccessibility() {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/tccutil")
-        process.arguments = ["reset", "Accessibility", Bundle.main.bundleIdentifier ?? "com.phonebt.app"]
+        process.arguments = ["reset", "Accessibility", Bundle.main.bundleIdentifier ?? "com.callbot.app"]
         try? process.run()
         process.waitUntilExit()
         requestAccessibility()

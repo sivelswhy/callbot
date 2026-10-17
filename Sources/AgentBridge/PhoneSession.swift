@@ -38,7 +38,7 @@ public struct PhoneSessionConfig: Sendable {
     public var audioMode: CallAudioMode
     public var ollamaURL: URL
     public var model: String
-    /// Speech locale override (PHONEBT_LOCALE); nil = the agent language's locale
+    /// Speech locale override (CALLBOT_LOCALE); nil = the agent language's locale
     public var locale: String?
     public var voice: String?
     public var voiceRate: Float
@@ -50,25 +50,24 @@ public struct PhoneSessionConfig: Sendable {
     public var profilePath: String
     public var extraInstructionsPath: String?
 
-    public static let dataDirectory = FileManager.default.homeDirectoryForCurrentUser
-        .appendingPathComponent(".phonebt").path
+    public static let dataDirectory = DataDirectory.path
 
     /// Defaults, overridable with environment variables
     public static func fromEnvironment(_ env: [String: String] = ProcessInfo.processInfo.environment) -> Self {
         let host = env["OLLAMA_HOST"].map { $0.hasPrefix("http") ? $0 : "http://\($0)" } ?? "http://localhost:11434"
         return PhoneSessionConfig(
-            audioMode: CallAudioMode(rawValue: env["PHONEBT_AUDIO"] ?? "") ?? .continuity,
+            audioMode: CallAudioMode(rawValue: env["CALLBOT_AUDIO"] ?? "") ?? .continuity,
             ollamaURL: URL(string: host)!,
-            model: env["PHONEBT_MODEL"] ?? "qwen3:8b",
-            locale: env["PHONEBT_LOCALE"],
-            voice: env["PHONEBT_VOICE"],
-            voiceRate: env["PHONEBT_VOICE_RATE"].flatMap(Float.init) ?? 0.52,
-            sttEngine: STTEngine(rawValue: env["PHONEBT_STT"] ?? "") ?? .whisper,
-            whisperModelPath: env["PHONEBT_WHISPER_MODEL"] ?? "\(dataDirectory)/models/ggml-large-v3-turbo-q5_0.bin",
-            whisperLanguage: env["PHONEBT_WHISPER_LANG"].flatMap { $0.isEmpty || $0 == "auto" ? nil : $0 },
-            whisperPort: env["PHONEBT_WHISPER_PORT"].flatMap(Int.init) ?? 8178,
-            profilePath: env["PHONEBT_PROFILE"] ?? "\(dataDirectory)/profile.md",
-            extraInstructionsPath: env["PHONEBT_PROMPT_FILE"]
+            model: env["CALLBOT_MODEL"] ?? "qwen3:8b",
+            locale: env["CALLBOT_LOCALE"],
+            voice: env["CALLBOT_VOICE"],
+            voiceRate: env["CALLBOT_VOICE_RATE"].flatMap(Float.init) ?? 0.52,
+            sttEngine: STTEngine(rawValue: env["CALLBOT_STT"] ?? "") ?? .whisper,
+            whisperModelPath: env["CALLBOT_WHISPER_MODEL"] ?? "\(dataDirectory)/models/ggml-large-v3-turbo-q5_0.bin",
+            whisperLanguage: env["CALLBOT_WHISPER_LANG"].flatMap { $0.isEmpty || $0 == "auto" ? nil : $0 },
+            whisperPort: env["CALLBOT_WHISPER_PORT"].flatMap(Int.init) ?? 8178,
+            profilePath: env["CALLBOT_PROFILE"] ?? "\(dataDirectory)/profile.md",
+            extraInstructionsPath: env["CALLBOT_PROMPT_FILE"]
         )
     }
 }
@@ -125,7 +124,7 @@ public final class PhoneSession: @unchecked Sendable {
     private let bluetoothManager = BluetoothManager()
     private let audioRouter = AudioRouter()
     private let whisperServer: WhisperServer
-    private let logger = PhoneBTLogger(category: .app)
+    private let logger = CallbotLogger(category: .app)
     private let lock = NSRecursiveLock()
 
     private var device: HFPDevice?
@@ -155,7 +154,7 @@ public final class PhoneSession: @unchecked Sendable {
         continuity.releaseVirtualDefaults()
     }
 
-    /// Default speech locale: PHONEBT_LOCALE, else the agent language's
+    /// Default speech locale: CALLBOT_LOCALE, else the agent language's
     public var speechLocale: String { config.locale ?? UILanguage.agent.locale }
 
     public var state: HFPState? { withLock { device?.currentState } }
@@ -459,7 +458,7 @@ public final class PhoneSession: @unchecked Sendable {
             ok: BluetoothManager.isAuthorized,
             detail: BluetoothManager.isAuthorized
                 ? L("Allowed", "Autorisé")
-                : L("Access \(BluetoothManager.authorizationStatus) — System Settings › Privacy & Security › Bluetooth › turn on PhoneBT", "Accès \(BluetoothManager.authorizationStatus) — Réglages Système › Confidentialité et sécurité › Bluetooth › active PhoneBT")
+                : L("Access \(BluetoothManager.authorizationStatus) — System Settings › Privacy & Security › Bluetooth › turn on Callbot", "Accès \(BluetoothManager.authorizationStatus) — Réglages Système › Confidentialité et sécurité › Bluetooth › active Callbot")
         ))
 
         if config.audioMode == .continuity {
@@ -475,8 +474,8 @@ public final class PhoneSession: @unchecked Sendable {
                 label: L("Accessibility", "Accessibilité"),
                 ok: ax,
                 detail: ax ? L("Allowed (dial / answer automatically)", "Autorisé (composer / décrocher automatiquement)")
-                    : L("Not allowed for this version of PhoneBT. If PhoneBT is already switched on in System Settings, that entry is for a previous build: click \"Reset permission\", then switch PhoneBT on again.",
-                        "Pas autorisé pour cette version de PhoneBT. Si PhoneBT est déjà coché dans les Réglages, c'est l'autorisation d'une ancienne version : clique « Réinitialiser l'autorisation », puis réactive PhoneBT.")
+                    : L("Not allowed for this version of Callbot. If Callbot is already switched on in System Settings, that entry is for a previous build: click \"Reset permission\", then switch Callbot on again.",
+                        "Pas autorisé pour cette version de Callbot. Si Callbot est déjà coché dans les Réglages, c'est l'autorisation d'une ancienne version : clique « Réinitialiser l'autorisation », puis réactive Callbot.")
             ))
         }
 
@@ -765,7 +764,7 @@ public final class PhoneSession: @unchecked Sendable {
                 if peak > 0.001 { heardSomething = true }
                 if tick == 4 && !heardSomething {
                     if session.capturesSystemAudio {
-                        self.log(.error, L("The agent can't hear the call: allow PhoneBT in System Settings › Privacy & Security › Screen & System Audio Recording (\"System Audio Recording Only\" section), then relaunch PhoneBT. If you can't hear the call either, its audio stayed on the iPhone.", "L'agent n'entend pas l'appel : autorise PhoneBT dans Réglages Système › Confidentialité et sécurité › Enregistrement de l'écran et de l'audio système (section « Audio système uniquement »), puis relance PhoneBT. Si tu n'entends pas non plus l'appel, son audio est resté sur l'iPhone."))
+                        self.log(.error, L("The agent can't hear the call: allow Callbot in System Settings › Privacy & Security › Screen & System Audio Recording (\"System Audio Recording Only\" section), then relaunch Callbot. If you can't hear the call either, its audio stayed on the iPhone.", "L'agent n'entend pas l'appel : autorise Callbot dans Réglages Système › Confidentialité et sécurité › Enregistrement de l'écran et de l'audio système (section « Audio système uniquement »), puis relance Callbot. Si tu n'entends pas non plus l'appel, son audio est resté sur l'iPhone."))
                     } else {
                         self.log(.error, L("No call audio reaches the Mac (\(deviceName) is silent). The call audio probably stayed on the iPhone: tap \"Audio\" on the iPhone's call screen and choose the Mac, or check that FaceTime's output is \"\(deviceName)\".", "Aucun son de l'appel n'arrive sur le Mac (\(deviceName) est silencieux). Le son de l'appel est probablement resté sur l'iPhone : touche « Audio » dans l'écran d'appel de l'iPhone et choisis le Mac, ou vérifie que la sortie de FaceTime est « \(deviceName) »."))
                     }
@@ -922,7 +921,7 @@ public enum SessionError: Error, LocalizedError {
         case .blackHoleMissing:
             return L("BlackHole isn't installed: brew install --cask blackhole-2ch blackhole-16ch, then restart the Mac", "BlackHole n'est pas installé : brew install --cask blackhole-2ch blackhole-16ch, puis redémarre le Mac")
         case .bluetoothNotAuthorized(let status):
-            return L("macOS blocks PhoneBT's Bluetooth access (\(status)). Accept the permission request, or turn on PhoneBT in System Settings › Privacy & Security › Bluetooth, then try again.", "macOS bloque l'accès Bluetooth de PhoneBT (\(status)). Accepte la demande d'autorisation, ou active PhoneBT dans Réglages Système › Confidentialité et sécurité › Bluetooth, puis réessaie.")
+            return L("macOS blocks Callbot's Bluetooth access (\(status)). Accept the permission request, or turn on Callbot in System Settings › Privacy & Security › Bluetooth, then try again.", "macOS bloque l'accès Bluetooth de Callbot (\(status)). Accepte la demande d'autorisation, ou active Callbot dans Réglages Système › Confidentialité et sécurité › Bluetooth, puis réessaie.")
         }
     }
 }
@@ -953,7 +952,7 @@ extension PhoneSession: CallActions {
                     return call == .alerting || call == .active
                 }
                 if !(await continuity.dial(sanitized, until: started)) && !started() {
-                    log(.error, L("I couldn't click \"Call\" — click it in the FaceTime window (and allow PhoneBT in Accessibility)", "Je n'ai pas pu cliquer « Appeler » — clique-le dans la fenêtre FaceTime (et autorise PhoneBT dans Accessibilité)"))
+                    log(.error, L("I couldn't click \"Call\" — click it in the FaceTime window (and allow Callbot in Accessibility)", "Je n'ai pas pu cliquer « Appeler » — clique-le dans la fenêtre FaceTime (et autorise Callbot dans Accessibilité)"))
                 }
                 // The call never went through: give the Mac its audio devices back
                 try? await Task.sleep(nanoseconds: 60_000_000_000)

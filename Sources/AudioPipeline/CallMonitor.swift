@@ -34,7 +34,7 @@ public final class CallMonitor: @unchecked Sendable {
     private var configObserver: NSObjectProtocol?
     private let callerFormat: AVAudioFormat
     private let voiceFormat: AVAudioFormat
-    private let logger = PhoneBTLogger(category: .audio)
+    private let logger = CallbotLogger(category: .audio)
     private let lock = NSLock()
     private var running = false
     private var enabled = true

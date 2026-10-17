@@ -45,7 +45,7 @@ public struct HFPState: Sendable {
 public final class HFPStateMachine: @unchecked Sendable {
     private var state: HFPState
     private let lock = NSLock()
-    private let logger = PhoneBTLogger(category: .hfp)
+    private let logger = CallbotLogger(category: .hfp)
 
     public init() {
         self.state = HFPState()

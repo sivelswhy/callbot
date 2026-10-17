@@ -23,7 +23,7 @@ public final class TTSPlayer: @unchecked Sendable {
     private let voice: AVSpeechSynthesisVoice?
     private let defaultLanguage: String
     private let rate: Float
-    private let logger = PhoneBTLogger(category: .audio)
+    private let logger = CallbotLogger(category: .audio)
     private let lock = NSLock()
     private var voicesByLanguage: [String: AVSpeechSynthesisVoice] = [:]
     private var activeUtterances = 0

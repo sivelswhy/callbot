@@ -36,12 +36,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 }
 
 @main
-struct PhoneBTApp: App {
+struct CallbotApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
     @StateObject private var model = AppModel()
 
     var body: some Scene {
-        WindowGroup("PhoneBT") {
+        WindowGroup("Callbot") {
             ContentView()
                 .environmentObject(model)
                 .frame(minWidth: 900, minHeight: 600)

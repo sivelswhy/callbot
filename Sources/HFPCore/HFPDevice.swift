@@ -22,7 +22,7 @@ public final class HFPDevice: @unchecked Sendable {
     private let hfpDelegate: HFPDelegate
     public let eventStream: HFPEventStream
     public let stateMachine: HFPStateMachine
-    private let logger = PhoneBTLogger(category: .hfp)
+    private let logger = CallbotLogger(category: .hfp)
     private var eventTask: Task<Void, Never>?
 
     public var deviceName: String {
@@ -59,7 +59,7 @@ public final class HFPDevice: @unchecked Sendable {
             // Advertise narrowband (CVSD) only unless asked otherwise: wideband codec
             // negotiation (mSBC) is a common cause of SCO audio failing to open.
             let codecNegotiation = UInt32(1 << 7)
-            if ProcessInfo.processInfo.environment["PHONEBT_WIDEBAND"] != "1" {
+            if ProcessInfo.processInfo.environment["CALLBOT_WIDEBAND"] != "1" {
                 hfDevice.supportedFeatures &= ~codecNegotiation
             }
             logger.info("HF features (Mac): 0x\(String(hfDevice.supportedFeatures, radix: 16))")

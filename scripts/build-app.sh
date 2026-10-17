@@ -1,15 +1,15 @@
 #!/bin/bash
-# Build PhoneBT.app (SwiftUI Mac app) into ./build
+# Build Callbot.app (SwiftUI Mac app) into ./build
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-swift build -c release --product PhoneBTApp
-BIN="$(swift build -c release --show-bin-path)/PhoneBTApp"
+swift build -c release --product CallbotApp
+BIN="$(swift build -c release --show-bin-path)/CallbotApp"
 
-APP="build/PhoneBT.app"
+APP="build/Callbot.app"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-cp "$BIN" "$APP/Contents/MacOS/PhoneBT"
+cp "$BIN" "$APP/Contents/MacOS/Callbot"
 
 # App icon: render the PNG if missing, then build the .icns with every required size
 [ -f Support/AppIcon.png ] || swift scripts/make-icon.swift Support/AppIcon.png
@@ -29,10 +29,10 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>CFBundleIdentifier</key><string>com.phonebt.app</string>
-    <key>CFBundleName</key><string>PhoneBT</string>
-    <key>CFBundleDisplayName</key><string>PhoneBT</string>
-    <key>CFBundleExecutable</key><string>PhoneBT</string>
+    <key>CFBundleIdentifier</key><string>com.callbot.app</string>
+    <key>CFBundleName</key><string>Callbot</string>
+    <key>CFBundleDisplayName</key><string>Callbot</string>
+    <key>CFBundleExecutable</key><string>Callbot</string>
     <key>CFBundleIconFile</key><string>AppIcon</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleShortVersionString</key><string>0.2.0</string>
@@ -43,22 +43,25 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>CFBundleDevelopmentRegion</key><string>en</string>
     <key>CFBundleLocalizations</key><array><string>en</string><string>fr</string></array>
     <key>NSBluetoothAlwaysUsageDescription</key>
-    <string>PhoneBT connects to your phone over Bluetooth (hands-free profile) to place and receive calls.</string>
+    <string>Callbot connects to your phone over Bluetooth (hands-free profile) to place and receive calls.</string>
     <key>NSAudioCaptureUsageDescription</key>
-    <string>PhoneBT captures the call audio played by the Mac so the AI agent can hear the caller.</string>
+    <string>Callbot captures the call audio played by the Mac so the AI agent can hear the caller.</string>
     <key>NSMicrophoneUsageDescription</key>
-    <string>PhoneBT listens to the call audio so the AI agent can hear the caller.</string>
+    <string>Callbot listens to the call audio so the AI agent can hear the caller.</string>
     <key>NSSpeechRecognitionUsageDescription</key>
-    <string>PhoneBT transcribes what the caller says, locally, for the AI agent.</string>
+    <string>Callbot transcribes what the caller says, locally, for the AI agent.</string>
 </dict>
 </plist>
 PLIST
 
 # A stable identity (scripts/setup-signing.sh) keeps the permissions across rebuilds
 IDENTITY="-"
-if security find-identity -v -p codesigning 2>/dev/null | grep -q "PhoneBT Local Signing"; then
-    IDENTITY="PhoneBT Local Signing"
-fi
+for name in "Callbot Local Signing" "PhoneBT Local Signing"; do
+    if security find-identity -v -p codesigning 2>/dev/null | grep -q "$name"; then
+        IDENTITY="$name"
+        break
+    fi
+done
 # Files under ~/Documents carry extended attributes that break codesign, and macOS can
 # add them back while signing: clear them and retry
 for attempt in 1 2 3 4 5; do

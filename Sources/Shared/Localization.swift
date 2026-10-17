@@ -44,9 +44,9 @@ public enum UILanguage: String, CaseIterable, Sendable {
         set { lock.lock(); stored = newValue; lock.unlock() }
     }
 
-    /// PHONEBT_UI_LANG, else the language saved in the app, else the system language
+    /// CALLBOT_UI_LANG, else the language saved in the app, else the system language
     private static func initial() -> UILanguage {
-        if let env = ProcessInfo.processInfo.environment["PHONEBT_UI_LANG"], let lang = UILanguage(rawValue: env.lowercased()) {
+        if let env = ProcessInfo.processInfo.environment["CALLBOT_UI_LANG"], let lang = UILanguage(rawValue: env.lowercased()) {
             return lang
         }
         if let saved = UserDefaults.standard.string(forKey: "uiLanguage"), let lang = UILanguage(rawValue: saved) {
@@ -59,7 +59,7 @@ public enum UILanguage: String, CaseIterable, Sendable {
 extension UILanguage {
     private static let agentLock = NSLock()
     private static var storedAgent: UILanguage = {
-        if let env = ProcessInfo.processInfo.environment["PHONEBT_AGENT_LANG"], let lang = UILanguage(rawValue: env.lowercased()) {
+        if let env = ProcessInfo.processInfo.environment["CALLBOT_AGENT_LANG"], let lang = UILanguage(rawValue: env.lowercased()) {
             return lang
         }
         if let saved = UserDefaults.standard.string(forKey: "agentLanguage"), let lang = UILanguage(rawValue: saved) {

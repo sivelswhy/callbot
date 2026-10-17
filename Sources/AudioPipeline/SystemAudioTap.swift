@@ -17,7 +17,7 @@ import AVFoundation
 import CoreAudio
 import Shared
 
-/// Captures what the Mac plays (all processes except PhoneBT) with a Core Audio process tap.
+/// Captures what the Mac plays (all processes except Callbot) with a Core Audio process tap.
 /// Used for Continuity calls: FaceTime plays the call on the user's speakers as usual (so the
 /// user hears it, without the ducking FaceTime applies to other apps) and the agent hears it here.
 /// Requires macOS 14.2 and the "system audio recording" permission (silence without it).
@@ -27,7 +27,7 @@ public final class SystemAudioTap: @unchecked Sendable {
     public let format: AVAudioFormat
     public var onBuffer: ((AVAudioPCMBuffer) -> Void)?
 
-    private let logger = PhoneBTLogger(category: .audio)
+    private let logger = CallbotLogger(category: .audio)
     private var tapID = AudioObjectID(kAudioObjectUnknown)
     private var aggregateID = AudioObjectID(kAudioObjectUnknown)
     private var procID: AudioDeviceIOProcID?
@@ -61,7 +61,7 @@ public final class SystemAudioTap: @unchecked Sendable {
         // The tap is read through a private aggregate device clocked by the default output
         let outputUID = Self.defaultOutputUID() ?? ""
         let aggregate: [String: Any] = [
-            kAudioAggregateDeviceNameKey: "PhoneBT system capture",
+            kAudioAggregateDeviceNameKey: "Callbot system capture",
             kAudioAggregateDeviceUIDKey: UUID().uuidString,
             kAudioAggregateDeviceMainSubDeviceKey: outputUID,
             kAudioAggregateDeviceIsPrivateKey: true,
@@ -149,7 +149,7 @@ public final class SystemAudioTap: @unchecked Sendable {
 
     // MARK: - Private
 
-    /// PhoneBT's own audio (agent voice monitor) must not be captured
+    /// Callbot's own audio (agent voice monitor) must not be captured
     private static func ownProcessObject() -> AudioObjectID? {
         var pid = getpid()
         var address = AudioObjectPropertyAddress(

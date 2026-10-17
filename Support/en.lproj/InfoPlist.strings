@@ -1,4 +1,4 @@
-"NSBluetoothAlwaysUsageDescription" = "PhoneBT connects to your phone over Bluetooth (hands-free profile) to place and receive calls.";
-"NSAudioCaptureUsageDescription" = "PhoneBT captures the call audio played by the Mac so the AI agent can hear the caller.";
-"NSMicrophoneUsageDescription" = "PhoneBT listens to the call audio so the AI agent can hear the caller.";
-"NSSpeechRecognitionUsageDescription" = "PhoneBT transcribes what the caller says, locally, for the AI agent.";
+"NSBluetoothAlwaysUsageDescription" = "Callbot connects to your phone over Bluetooth (hands-free profile) to place and receive calls.";
+"NSAudioCaptureUsageDescription" = "Callbot captures the call audio played by the Mac so the AI agent can hear the caller.";
+"NSMicrophoneUsageDescription" = "Callbot listens to the call audio so the AI agent can hear the caller.";
+"NSSpeechRecognitionUsageDescription" = "Callbot transcribes what the caller says, locally, for the AI agent.";

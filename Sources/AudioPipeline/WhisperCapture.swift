@@ -21,8 +21,8 @@ import Shared
 public final class WhisperCapture: @unchecked Sendable {
     private let sessionManager: AudioSessionManager
     private let serverURL: URL
-    private let logger = PhoneBTLogger(category: .audio)
-    private let queue = DispatchQueue(label: "phonebt.whisper.vad")
+    private let logger = CallbotLogger(category: .audio)
+    private let queue = DispatchQueue(label: "callbot.whisper.vad")
     private let session: URLSession
 
     private let targetFormat = AVAudioFormat(
@@ -224,7 +224,7 @@ public final class WhisperCapture: @unchecked Sendable {
     }
 
     private static func requestTranscription(wav: Data, url: URL, session: URLSession, language: String?) async throws -> (String, String?) {
-        let boundary = "phonebt-\(UUID().uuidString)"
+        let boundary = "callbot-\(UUID().uuidString)"
         var body = Data()
         func field(_ name: String, _ value: String) {
             body.append("--\(boundary)\r\nContent-Disposition: form-data; name=\"\(name)\"\r\n\r\n\(value)\r\n".data(using: .utf8)!)
@@ -330,7 +330,7 @@ public final class WhisperServer: @unchecked Sendable {
     public let url: URL
     private let modelPath: String
     private var process: Process?
-    private let logger = PhoneBTLogger(category: .audio)
+    private let logger = CallbotLogger(category: .audio)
 
     public init(port: Int, modelPath: String) {
         self.url = URL(string: "http://127.0.0.1:\(port)")!

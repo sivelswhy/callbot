@@ -26,9 +26,9 @@ jobs:
         run: ./scripts/build-app.sh
 
       - name: Package app
-        run: ditto -c -k --keepParent build/PhoneBT.app build/PhoneBT.zip
+        run: ditto -c -k --keepParent build/Callbot.app build/Callbot.zip
 
       - uses: actions/upload-artifact@v5
         with:
-          name: PhoneBT-app
-          path: build/PhoneBT.zip
+          name: Callbot-app
+          path: build/Callbot.zip

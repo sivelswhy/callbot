@@ -1,4 +1,4 @@
-// Generates the PhoneBT app icon (1024×1024 PNG).
+// Generates the Callbot app icon (1024×1024 PNG).
 // Usage: swift scripts/make-icon.swift <output.png>
 
 import AppKit

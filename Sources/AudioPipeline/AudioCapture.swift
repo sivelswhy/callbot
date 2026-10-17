@@ -21,7 +21,7 @@ import Shared
 public final class AudioCapture: @unchecked Sendable {
     private let sessionManager: AudioSessionManager
     private let speechRecognizer: SFSpeechRecognizer
-    private let logger = PhoneBTLogger(category: .audio)
+    private let logger = CallbotLogger(category: .audio)
 
     private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
     private var recognitionTask: SFSpeechRecognitionTask?

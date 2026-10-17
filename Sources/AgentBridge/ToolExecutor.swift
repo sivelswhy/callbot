@@ -30,7 +30,7 @@ public protocol CallActions: AnyObject, Sendable {
 public final class ToolExecutor: @unchecked Sendable {
     private let device: HFPDevice
     private let audioRouter: AudioRouter
-    private let logger = PhoneBTLogger(category: .agent)
+    private let logger = CallbotLogger(category: .agent)
     public var ttsPlayer: TTSPlayer?
     /// When set, dial/accept/end go through these actions instead of the HFP device
     public weak var actions: CallActions?

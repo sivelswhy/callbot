@@ -23,12 +23,12 @@ public enum LogCategory: String, Sendable {
     case app = "App"
 }
 
-public struct PhoneBTLogger: Sendable {
+public struct CallbotLogger: Sendable {
     private let logger: os.Logger
     private let category: LogCategory
 
     public init(category: LogCategory) {
-        self.logger = os.Logger(subsystem: "com.phonebt", category: category.rawValue)
+        self.logger = os.Logger(subsystem: "com.callbot", category: category.rawValue)
         self.category = category
     }
 
@@ -52,11 +52,11 @@ public struct PhoneBTLogger: Sendable {
     }
 }
 
-/// Appends log lines to ~/.phonebt/debug.log (info level isn't persisted by the unified log)
+/// Appends log lines to ~/.callbot/debug.log (info level isn't persisted by the unified log)
 final class DebugFile: @unchecked Sendable {
     static let shared = DebugFile()
 
-    private let queue = DispatchQueue(label: "phonebt.debugfile")
+    private let queue = DispatchQueue(label: "callbot.debugfile")
     private let handle: FileHandle?
     private let formatter: DateFormatter = {
         let f = DateFormatter()
@@ -65,7 +65,7 @@ final class DebugFile: @unchecked Sendable {
     }()
 
     private init() {
-        let dir = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".phonebt")
+        let dir = DataDirectory.url
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let url = dir.appendingPathComponent("debug.log")
         // Start fresh when the file grows past 5 MB

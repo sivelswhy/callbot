@@ -17,11 +17,11 @@
 import PackageDescription
 
 let package = Package(
-    name: "PhoneBT",
+    name: "Callbot",
     platforms: [.macOS(.v13)],
     products: [
-        .executable(name: "PhoneBT", targets: ["PhoneBT"]),
-        .executable(name: "PhoneBTApp", targets: ["PhoneBTApp"]),
+        .executable(name: "Callbot", targets: ["Callbot"]),
+        .executable(name: "CallbotApp", targets: ["CallbotApp"]),
     ],
     dependencies: [],
     targets: [
@@ -56,7 +56,7 @@ let package = Package(
             ]
         ),
         .executableTarget(
-            name: "PhoneBT",
+            name: "Callbot",
             dependencies: [
                 "HFPCore",
                 "AudioPipeline",
@@ -69,7 +69,7 @@ let package = Package(
             ]
         ),
         .executableTarget(
-            name: "PhoneBTApp",
+            name: "CallbotApp",
             dependencies: [
                 "HFPCore",
                 "AudioPipeline",

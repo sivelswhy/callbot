@@ -3,16 +3,16 @@
 <plist version="1.0">
 <dict>
     <key>CFBundleIdentifier</key>
-    <string>com.phonebt.cli</string>
+    <string>com.callbot.cli</string>
     <key>CFBundleName</key>
-    <string>PhoneBT</string>
+    <string>Callbot</string>
     <key>NSBluetoothAlwaysUsageDescription</key>
-    <string>PhoneBT connects to your phone over Bluetooth (hands-free profile) to place and receive calls.</string>
+    <string>Callbot connects to your phone over Bluetooth (hands-free profile) to place and receive calls.</string>
     <key>NSAudioCaptureUsageDescription</key>
-    <string>PhoneBT captures the call audio played by the Mac so the AI agent can hear the caller.</string>
+    <string>Callbot captures the call audio played by the Mac so the AI agent can hear the caller.</string>
     <key>NSMicrophoneUsageDescription</key>
-    <string>PhoneBT listens to the call audio so the AI agent can hear the caller.</string>
+    <string>Callbot listens to the call audio so the AI agent can hear the caller.</string>
     <key>NSSpeechRecognitionUsageDescription</key>
-    <string>PhoneBT transcribes what the caller says, locally, for the AI agent.</string>
+    <string>Callbot transcribes what the caller says, locally, for the AI agent.</string>
 </dict>
 </plist>

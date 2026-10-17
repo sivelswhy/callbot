@@ -1,4 +1,4 @@
-# PhoneBT — local AI phone agent for macOS
+# Callbot — local AI phone agent for macOS
 
 [![Build](https://github.com/sivelswhy/callbot/actions/workflows/build.yml/badge.svg)](https://github.com/sivelswhy/callbot/actions/workflows/build.yml)
 
@@ -6,7 +6,7 @@
 > settings that move between versions. Always keep an eye on what the agent says and does
 > during a call.
 
-PhoneBT turns a Mac paired with an iPhone into a phone assistant: an AI agent places and
+Callbot turns a Mac paired with an iPhone into a phone assistant: an AI agent places and
 receives calls over the phone's cellular line, listens to the other party, answers out loud,
 navigates voice menus ("press 1…") and asks for your input when it's missing information.
 Everything runs **locally**: LLM through Ollama, transcription through whisper.cpp, speech
@@ -40,9 +40,9 @@ iPhone ──(Continuity "Calls on Other Devices")──► FaceTime on the Mac
 ## Languages
 
 - **App language**: English or French, in the app (bottom of the sidebar) or with
-  `PHONEBT_UI_LANG=en|fr`. Defaults to the system language.
+  `CALLBOT_UI_LANG=en|fr`. Defaults to the system language.
 - **Agent language**: English or French, in the *AI agent* section or with
-  `PHONEBT_AGENT_LANG=en|fr`. It's the language the agent uses with you (reports, questions),
+  `CALLBOT_AGENT_LANG=en|fr`. It's the language the agent uses with you (reports, questions),
   the language the call is translated into in the app, and the language it greets callers in.
 - **Call language**: the agent answers in the other party's language, whatever it is. Whisper
   detects it automatically (English, French, Spanish, Arabic, Hebrew, Russian, German…), or
@@ -62,8 +62,8 @@ iPhone ──(Continuity "Calls on Other Devices")──► FaceTime on the Mac
 - [whisper.cpp](https://github.com/ggml-org/whisper.cpp) and the `large-v3-turbo` model:
   ```bash
   brew install whisper-cpp
-  mkdir -p ~/.phonebt/models
-  curl -L -o ~/.phonebt/models/ggml-large-v3-turbo-q5_0.bin \
+  mkdir -p ~/.callbot/models
+  curl -L -o ~/.callbot/models/ggml-large-v3-turbo-q5_0.bin \
     https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo-q5_0.bin
   ```
 - [BlackHole](https://github.com/ExistentialAudio/BlackHole) 2ch and 16ch, then restart the Mac:
@@ -80,13 +80,13 @@ iPhone ──(Continuity "Calls on Other Devices")──► FaceTime on the Mac
 git clone https://github.com/sivelswhy/callbot.git
 cd callbot
 ./scripts/build-app.sh
-open build/PhoneBT.app
+open build/Callbot.app
 ```
 
-A prebuilt `PhoneBT.app` is also attached to each [GitHub Actions run](https://github.com/sivelswhy/callbot/actions)
+A prebuilt `Callbot.app` is also attached to each [GitHub Actions run](https://github.com/sivelswhy/callbot/actions)
 (unsigned: right-click › Open the first time).
 
-On first launch, allow PhoneBT in System Settings › Privacy & Security:
+On first launch, allow Callbot in System Settings › Privacy & Security:
 
 | Permission | Why |
 |---|---|
@@ -113,7 +113,7 @@ and tells you what to fix; the **Check again** button runs the checks again.
 4. Follow the call live: transcription, translation, questions from the agent with clickable
    answers.
 
-A command-line interface is also available: `swift run PhoneBT` (`help` lists the commands).
+A command-line interface is also available: `swift run Callbot` (`help` lists the commands).
 
 ## Configuration
 
@@ -121,28 +121,28 @@ Optional environment variables:
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `PHONEBT_UI_LANG` | system language | App language: `en` or `fr` |
-| `PHONEBT_AGENT_LANG` | app language | Agent language: `en` or `fr` |
-| `PHONEBT_MODEL` | `qwen3:8b` | Ollama model (`qwen3:4b-instruct`: twice as fast, much less reliable) |
+| `CALLBOT_UI_LANG` | system language | App language: `en` or `fr` |
+| `CALLBOT_AGENT_LANG` | app language | Agent language: `en` or `fr` |
+| `CALLBOT_MODEL` | `qwen3:8b` | Ollama model (`qwen3:4b-instruct`: twice as fast, much less reliable) |
 | `OLLAMA_HOST` | `http://localhost:11434` | Ollama server |
-| `PHONEBT_LOCALE` | agent language | Default speech locale (e.g. `en-GB`) |
-| `PHONEBT_VOICE` | best installed voice | Speech voice (name or identifier) |
-| `PHONEBT_VOICE_RATE` | `0.52` | Speech rate (0 to 1) |
-| `PHONEBT_STT` | `whisper` | `whisper` (multilingual) or `apple` (single language) |
-| `PHONEBT_WHISPER_MODEL` | `~/.phonebt/models/ggml-large-v3-turbo-q5_0.bin` | Whisper model |
-| `PHONEBT_WHISPER_LANG` | `auto` | Other party's language, or automatic detection |
-| `PHONEBT_AUDIO` | `continuity` | `continuity` or `bluetooth` (SCO audio, refused by recent macOS) |
-| `PHONEBT_PROFILE` | `~/.phonebt/profile.md` | User info file |
-| `PHONEBT_PROMPT_FILE` | — | Extra instructions for the agent |
+| `CALLBOT_LOCALE` | agent language | Default speech locale (e.g. `en-GB`) |
+| `CALLBOT_VOICE` | best installed voice | Speech voice (name or identifier) |
+| `CALLBOT_VOICE_RATE` | `0.52` | Speech rate (0 to 1) |
+| `CALLBOT_STT` | `whisper` | `whisper` (multilingual) or `apple` (single language) |
+| `CALLBOT_WHISPER_MODEL` | `~/.callbot/models/ggml-large-v3-turbo-q5_0.bin` | Whisper model |
+| `CALLBOT_WHISPER_LANG` | `auto` | Other party's language, or automatic detection |
+| `CALLBOT_AUDIO` | `continuity` | `continuity` or `bluetooth` (SCO audio, refused by recent macOS) |
+| `CALLBOT_PROFILE` | `~/.callbot/profile.md` | User info file |
+| `CALLBOT_PROMPT_FILE` | — | Extra instructions for the agent |
 
-The debug log is written to `~/.phonebt/debug.log`.
+The debug log is written to `~/.callbot/debug.log`.
 
 ## Project structure
 
 ```
 Sources/
-├── PhoneBTApp/      macOS app (SwiftUI)
-├── PhoneBT/         Command-line interface
+├── CallbotApp/      macOS app (SwiftUI)
+├── Callbot/         Command-line interface
 ├── AgentBridge/     Call session, local agent (Ollama), tools, Continuity
 ├── AudioPipeline/   System capture, voice output, Whisper, speech synthesis, listening in
 ├── HFPCore/         Bluetooth hands-free (HFP): connection, call state, DTMF

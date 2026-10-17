@@ -23,7 +23,7 @@ public actor LocalAgent {
     private let toolExecutor: ToolExecutor
     private let eventStream: HFPEventStream
     private let autoAnswer: Bool
-    private let logger = PhoneBTLogger(category: .agent)
+    private let logger = CallbotLogger(category: .agent)
 
     private var conversationHistory: [ChatMessage] = []
     /// Digits the agent may type: from the user's profile and messages (never invented)

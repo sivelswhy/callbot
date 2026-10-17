@@ -24,7 +24,7 @@ func printBanner() {
     print("""
 
     ╔══════════════════════════════════════╗
-    ║          PhoneBT v0.2.0             ║
+    ║          Callbot v0.2.0             ║
     ║  Bluetooth HFP Client for macOS    ║
     ║  Local AI phone agent (offline)    ║
     ╚══════════════════════════════════════╝
@@ -51,7 +51,7 @@ func printHelp() {
 
     In agent mode: free text = instruction or answer to the agent,
       > text = said directly in the call, # 123 = keys, exit = quit.
-    Languages: PHONEBT_UI_LANG=en|fr (app), PHONEBT_AGENT_LANG=en|fr (agent).
+    Languages: CALLBOT_UI_LANG=en|fr (app), CALLBOT_AGENT_LANG=en|fr (agent).
     """, """
     Commandes :
       scan             - Chercher des appareils Bluetooth
@@ -71,7 +71,7 @@ func printHelp() {
 
     En mode agent : texte libre = instruction ou réponse à l'agent,
       > texte = dit directement dans l'appel, # 123 = touches, exit = quitter.
-    Langues : PHONEBT_UI_LANG=en|fr (app), PHONEBT_AGENT_LANG=en|fr (agent).
+    Langues : CALLBOT_UI_LANG=en|fr (app), CALLBOT_AGENT_LANG=en|fr (agent).
     """))
 }
 
@@ -143,7 +143,7 @@ func handleVoices() {
             print("  \(v.name) [\(v.language)] — \(v.identifier)")
         }
     }
-    print(L("Main voice: export PHONEBT_VOICE=\"<name or identifier>\"", "Voix principale : export PHONEBT_VOICE=\"<nom ou identifiant>\""))
+    print(L("Main voice: export CALLBOT_VOICE=\"<name or identifier>\"", "Voix principale : export CALLBOT_VOICE=\"<nom ou identifiant>\""))
 }
 
 func handleAgentMode(autoAnswer: Bool) async {
@@ -183,7 +183,7 @@ AudioCapture.requestAuthorization { _ in }
 
 Task {
     while true {
-        print("phonebt> ", terminator: "")
+        print("callbot> ", terminator: "")
         fflush(stdout)
         guard let line = readLine() else { break }
 

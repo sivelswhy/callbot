@@ -28,7 +28,7 @@ public final class AudioSessionManager: @unchecked Sendable {
     private var voiceOutput: VoiceOutput?
     /// Mono format of the voice buffers (the output device's sample rate)
     public private(set) var playbackFormat: AVAudioFormat = AVAudioFormat(standardFormatWithSampleRate: 48000, channels: 1)!
-    private let logger = PhoneBTLogger(category: .audio)
+    private let logger = CallbotLogger(category: .audio)
     private let tapLock = NSLock()
     private var inputHandlers: [UUID: (AVAudioPCMBuffer) -> Void] = [:]
     private var tapInstalled = false
