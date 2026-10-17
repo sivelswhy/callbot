@@ -32,22 +32,22 @@ let shape = CGPath(roundedRect: body, cornerWidth: 185, cornerHeight: 185, trans
 ctx.saveGState()
 ctx.setShadow(offset: CGSize(width: 0, height: -12), blur: 28, color: color(0x000000, 0.35))
 ctx.addPath(shape)
-ctx.setFillColor(color(0x0B3B4F))
+ctx.setFillColor(color(0x18181B))
 ctx.fillPath()
 ctx.restoreGState()
 
-// Background gradient: deep indigo → teal
+// Background gradient: graphite
 ctx.saveGState()
 ctx.addPath(shape)
 ctx.clip()
 let bg = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
-                    colors: [color(0x14E0A6), color(0x0F8FA8), color(0x2B2F8F)] as CFArray,
+                    colors: [color(0x52525B), color(0x27272A), color(0x18181B)] as CFArray,
                     locations: [0, 0.5, 1])!
 ctx.drawLinearGradient(bg, start: CGPoint(x: 180, y: 940), end: CGPoint(x: 860, y: 90), options: [])
 
 // Soft highlight at the top
 let glow = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
-                      colors: [color(0xFFFFFF, 0.28), color(0xFFFFFF, 0)] as CFArray,
+                      colors: [color(0xFFFFFF, 0.15), color(0xFFFFFF, 0)] as CFArray,
                       locations: [0, 1])!
 ctx.drawRadialGradient(glow, startCenter: CGPoint(x: 400, y: 880), startRadius: 0,
                        endCenter: CGPoint(x: 400, y: 880), endRadius: 520, options: [])
@@ -76,44 +76,22 @@ func drawSymbol(_ name: String, pointSize: CGFloat, weight: NSFont.Weight, in re
     ctx.restoreGState()
 }
 
-// Laptop (left) and iPhone (right)
+// Laptop with an incoming call on its screen
 drawSymbol("laptopcomputer", pointSize: 400, weight: .semibold,
-           in: CGRect(x: 135, y: 215, width: 500, height: 390),
-           color: .white, shadow: true)
-drawSymbol("iphone", pointSize: 400, weight: .semibold,
-           in: CGRect(x: 600, y: 215, width: 330, height: 460),
-           color: .white, shadow: true)
+           in: CGRect(x: 160, y: 230, width: 704, height: 560),
+           color: NSColor(red: 0.89, green: 0.89, blue: 0.91, alpha: 1), shadow: true)
 
-// Link between them: dashed arc with a node at each end
-let from = CGPoint(x: 385, y: 556)
-let to = CGPoint(x: 765, y: 640)
-let link = CGMutablePath()
-link.move(to: from)
-link.addCurve(to: to, control1: CGPoint(x: 410, y: 800), control2: CGPoint(x: 740, y: 850))
+let callCenter = CGPoint(x: 512, y: 516)
 ctx.saveGState()
-ctx.setShadow(offset: CGSize(width: 0, height: -6), blur: 14, color: color(0x062033, 0.35))
-ctx.setStrokeColor(color(0xFFEE9E))
-ctx.setLineWidth(20)
-ctx.setLineCap(.round)
-ctx.setLineDash(phase: 0, lengths: [2, 42])
-ctx.addPath(link)
-ctx.strokePath()
-ctx.setFillColor(color(0xFFEE9E))
-for point in [from, to] {
-    ctx.fillEllipse(in: CGRect(x: point.x - 22, y: point.y - 22, width: 44, height: 44))
-}
+ctx.setStrokeColor(color(0xF97316, 0.55))
+ctx.setLineWidth(14)
+ctx.strokeEllipse(in: CGRect(x: callCenter.x - 108, y: callCenter.y - 108, width: 216, height: 216))
+ctx.setFillColor(color(0xF97316))
+ctx.fillEllipse(in: CGRect(x: callCenter.x - 86, y: callCenter.y - 86, width: 172, height: 172))
 ctx.restoreGState()
-
-// Voice badge on the link
-let badgeCenter = CGPoint(x: 575, y: 768)
-ctx.saveGState()
-ctx.setShadow(offset: CGSize(width: 0, height: -8), blur: 20, color: color(0x062033, 0.4))
-ctx.setFillColor(color(0xFFEE9E))
-ctx.fillEllipse(in: CGRect(x: badgeCenter.x - 78, y: badgeCenter.y - 78, width: 156, height: 156))
-ctx.restoreGState()
-drawSymbol("waveform", pointSize: 300, weight: .bold,
-           in: CGRect(x: badgeCenter.x - 52, y: badgeCenter.y - 52, width: 104, height: 104),
-           color: NSColor(red: 0.06, green: 0.36, blue: 0.5, alpha: 1), shadow: false)
+drawSymbol("phone.fill", pointSize: 300, weight: .semibold,
+           in: CGRect(x: callCenter.x - 52, y: callCenter.y - 52, width: 104, height: 104),
+           color: .white, shadow: false)
 
 NSGraphicsContext.restoreGraphicsState()
 try! rep.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: output))
